@@ -13,6 +13,10 @@ pub struct ChangesRepo {
 }
 
 impl ChangesRepo {
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
+    }
+
     pub async fn create(&self, old: TaskStatus, task: &Task) -> Result<Change, DbErr> {
         let changes_count = ChangeEntity::find()
             .filter(change::Column::TaskId.eq(&task.id))

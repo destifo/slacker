@@ -7,8 +7,12 @@ edition = "2021"
 anyhow = "1"
 axum = "0.7"
 axum-server = { version = "0.7.2", features = ["tls-rustls"] }
+dotenvy = "0.15"
+envy = "0.4"
+futures-util = "0.3.31"
 migration = { path = "../migration" }
 nanoid = "0.4"
+reqwest = { version = "0.12.27", features = ["json"] }
 sea-orm = { version = "2.0.0-rc", features = [
   "runtime-tokio-rustls",
   "sqlx-postgres",
@@ -18,3 +22,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2.0.17"
 tokio = { workspace = true }
+tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"

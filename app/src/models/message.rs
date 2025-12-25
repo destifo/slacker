@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
+use serde::Serialize;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize)]
 #[sea_orm(table_name = "messages")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -8,6 +9,8 @@ pub struct Model {
     pub content: String,
     pub external_id: String,
     pub person_id: String,
+    pub channel: String,
+    pub timestamp: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

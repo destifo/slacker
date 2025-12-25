@@ -1,0 +1,64 @@
+
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Frontend (Node.js)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/.eslintcache
+
+# Docker
+postgres_data/
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+*.profraw
+
+# Build artifacts
+*.o
+*.a
+*.exe
+*.dll
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Documentation builds
+target/doc/
+
+# Rust analyzer
+rust-project.json

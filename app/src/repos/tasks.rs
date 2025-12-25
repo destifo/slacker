@@ -16,6 +16,10 @@ pub struct TasksRepo {
 }
 
 impl TasksRepo {
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
+    }
+
     pub async fn create(
         &self,
         status: TaskStatus,
@@ -36,9 +40,7 @@ impl TasksRepo {
     }
 
     pub async fn get(&self, task_id: String) -> Result<Task, DbErr> {
-        let task = TaskEntity::find_by_id(task_id)
-            .one(&self.db)
-            .await?;
+        let task = TaskEntity::find_by_id(task_id).one(&self.db).await?;
 
         match task {
             Some(t) => Ok(t),
@@ -66,5 +68,23 @@ impl TasksRepo {
         let updated_task = task.update(&self.db).await?;
 
         Ok(updated_task)
+    }
+
+    pub async fn get_task_by_message_id(&self, message_id: String) -> Result<Task, DbErr> {
+        let task = TaskEntity::find()
+            .filter(task::Column::MessageId.eq(&message_id))
+            .one(&self.db)
+            .await?;
+
+        match task {
+            Some(t) => Ok(t),
+            None => Err(DbErr::RecordNotFound("Task was not found".to_string())),
+        }
+    }
+
+    pub async fn get_all_tasks(&self) -> Result<Vec<Task>, DbErr> {
+        let tasks = TaskEntity::find().all(&self.db).await?;
+
+        Ok(tasks)
     }
 }

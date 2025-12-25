@@ -4,6 +4,7 @@ use crate::models::{
     task,
 };
 use crate::utils::crypto::generate_uuid;
+use migration::query;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use sea_orm::{ActiveValue::Set, QuerySelect, RelationTrait};
 
@@ -12,10 +13,16 @@ pub struct MessagesRepo {
 }
 
 impl MessagesRepo {
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
+    }
+
     pub async fn create(
         &self,
         content: String,
         external_id: String,
+        channel: String,
+        timestamp: String,
         person: &Person,
     ) -> Result<Message, DbErr> {
         let message_model = ActiveModel {
@@ -23,6 +30,8 @@ impl MessagesRepo {
             person_id: Set(person.id.clone()),
             content: Set(content),
             external_id: Set(external_id),
+            channel: Set(channel),
+            timestamp: Set(timestamp),
         };
         let message = message_model.insert(&self.db).await?;
 
@@ -54,5 +63,38 @@ impl MessagesRepo {
                 "Associated task not found for the message".to_string(),
             )),
         }
+    }
+
+    pub async fn get_message_by_external_id(&self, external_id: String) -> Result<Message, DbErr> {
+        let message = MessageEntity::find()
+            .filter(message::Column::ExternalId.eq(external_id.clone()))
+            .one(&self.db)
+            .await?;
+
+        match message {
+            Some(msg) => Ok(msg),
+            None => Err(DbErr::RecordNotFound(format!(
+                "Message with external_id: {} not found",
+                external_id
+            ))),
+        }
+    }
+
+    pub async fn get_by_id(&self, message_id: String) -> Result<Message, DbErr> {
+        let message = MessageEntity::find_by_id(&message_id).one(&self.db).await?;
+
+        match message {
+            Some(msg) => Ok(msg),
+            None => Err(DbErr::RecordNotFound(format!(
+                "Message with id: {} not found",
+                message_id
+            ))),
+        }
+    }
+
+    pub async fn get_all(&self) -> Result<Vec<Message>, DbErr> {
+        let messages = MessageEntity::find().all(&self.db).await?;
+
+        Ok(messages)
     }
 }

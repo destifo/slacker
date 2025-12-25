@@ -1,3 +1,4 @@
+pub mod config;
 pub mod core;
 mod database;
 mod handlers;
@@ -6,4 +7,5 @@ mod models;
 mod repos;
 mod routes;
 mod services;
+pub mod sockets;
 mod utils;

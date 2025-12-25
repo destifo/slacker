@@ -29,15 +29,16 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table("persons")
                     .if_not_exists()
-                    .col(pk_auto("id"))
+                    .col(
+                        ColumnDef::new(Alias::new("id"))
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
                     .col(string("name"))
+                    .col(string("email"))
                     .col(boolean("is_me"))
                     .col(string("external_id"))
-                    .index(
-                        Index::create()
-                            .name("persons_external_id_idx")
-                            .col("external_id"),
-                    )
                     .to_owned(),
             )
             .await?;
@@ -48,15 +49,17 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table("messages")
                     .if_not_exists()
-                    .col(pk_auto("id"))
+                    .col(
+                        ColumnDef::new(Alias::new("id"))
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
                     .col(string("content"))
                     .col(string("external_id"))
                     .col(string("person_id"))
-                    .index(
-                        Index::create()
-                            .name("messages_external_id_index")
-                            .col("external_id"),
-                    )
+                    .col(string("timestamp"))
+                    .col(string("channel"))
                     .to_owned(),
             )
             .await?;
@@ -67,8 +70,13 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table("tasks")
                     .if_not_exists()
-                    .col(pk_auto("id").not_null())
-                    .col(ColumnDef::new(TaskStatus::Type).not_null())
+                    .col(
+                        ColumnDef::new(Alias::new("id"))
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(string("status").not_null())
                     .col(string("assigned_to").not_null())
                     .col(
                         timestamp("created_at")
@@ -100,7 +108,12 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table("changes")
                     .if_not_exists()
-                    .col(pk_auto("id"))
+                    .col(
+                        ColumnDef::new(Alias::new("id"))
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
                     .col(string("old"))
                     .col(string("new"))
                     .col(integer("index"))
@@ -112,7 +125,6 @@ impl MigrationTrait for Migration {
                             .to("tasks", "id")
                             .on_delete(ForeignKeyAction::Cascade),
                     )
-                    .index(Index::create().name("idx_changes").col(Alias::new("index")))
                     .to_owned(),
             )
             .await?;
@@ -132,9 +144,6 @@ impl MigrationTrait for Migration {
             .await?;
         manager
             .drop_table(Table::drop().table("changes").to_owned())
-            .await?;
-        manager
-            .drop_type(Type::drop().name(TaskStatus::Type).to_owned())
             .await?;
 
         Ok(())

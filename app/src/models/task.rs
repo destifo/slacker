@@ -1,8 +1,11 @@
 use sea_orm::entity::prelude::*;
+use serde::Serialize;
 
-#[derive(Clone, Debug, PartialEq, EnumIter, DeriveActiveEnum)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, EnumIter, DeriveActiveEnum, Serialize)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
 pub enum TaskStatus {
+    #[sea_orm(string_value = "Blank")]
+    Blank,
     #[sea_orm(string_value = "InProgress")]
     InProgress,
     #[sea_orm(string_value = "Blocked")]
@@ -11,7 +14,7 @@ pub enum TaskStatus {
     Completed,
 }
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize)]
 #[sea_orm(table_name = "tasks")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -33,7 +36,7 @@ pub enum Relation {
     #[sea_orm(has_many = "super::change::Entity")]
     Change,
     #[sea_orm(
-        belongs_to = "super::message::Entity"
+        belongs_to = "super::message::Entity",
         from = "Column::MessageId",
         to = "super::message::Column::Id",
         on_delete = "Cascade"

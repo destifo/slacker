@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
+use serde::Serialize;
 
-#[derive(Debug, Clone, DeriveEntityModel, PartialEq)]
+#[derive(Debug, Clone, DeriveEntityModel, PartialEq, Serialize)]
 #[sea_orm(table_name = "persons")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -8,6 +9,7 @@ pub struct Model {
     pub name: String,
     pub email: String,
     pub is_me: bool,
+    // slack member id
     pub external_id: String,
 }
 

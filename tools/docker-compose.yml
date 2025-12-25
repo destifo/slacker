@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: slacker_db
+    environment:
+      POSTGRES_USER: slacker
+      POSTGRES_PASSWORD: slacker_secret
+      POSTGRES_DB: slacker
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

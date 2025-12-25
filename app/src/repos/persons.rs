@@ -13,6 +13,10 @@ pub struct PersonsRepo {
 }
 
 impl PersonsRepo {
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
+    }
+
     pub async fn create(
         &self,
         name: String,
@@ -25,7 +29,7 @@ impl PersonsRepo {
             name: Set(name),
             is_me: Set(is_me),
             external_id: Set(external_id),
-            email: Set(email)
+            email: Set(email),
         };
 
         let person = person_model.insert(&self.db).await?;
@@ -42,6 +46,21 @@ impl PersonsRepo {
         match person {
             Some(p) => Ok(p),
             None => Err(DbErr::RecordNotFound("Person not found".to_string())),
+        }
+    }
+
+    pub async fn get_by_username(&self, username: String) -> Result<Person, DbErr> {
+        let person = PersonEntity::find()
+            .filter(person::Column::Name.eq(username.clone()))
+            .one(&self.db)
+            .await?;
+
+        match person {
+            Some(p) => Ok(p),
+            None => Err(DbErr::RecordNotFound(format!(
+                "Person with username {} not found",
+                username
+            ))),
         }
     }
 }

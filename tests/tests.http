@@ -1,0 +1,2 @@
+### Get my tasks
+GET http://localhost:8000/api/tasks HTTP/1.1
