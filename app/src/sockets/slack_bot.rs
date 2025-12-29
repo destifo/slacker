@@ -23,11 +23,20 @@ struct ConnectionResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct ReactionItem {
+struct SlackEventItem {
     #[serde(rename = "type")]
     item_type: String,
     channel: String,
     ts: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SlackReaction {
+    name: String,
+    #[serde(default)]
+    users: Vec<String>,
+    #[serde(default)]
+    count: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,7 +45,7 @@ struct SlackEvent {
     event_type: String,
     user: Option<String>,
     reaction: Option<String>,
-    item: Option<ReactionItem>,
+    item: Option<SlackEventItem>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,22 +83,22 @@ struct Acknowledgment {
 fn emoji_to_status(emoji: &str) -> Option<TaskStatus> {
     match emoji {
         "eyes" => Some(TaskStatus::InProgress),
-        "arrorws_counterclockwise" | "loading" | "hourglass" => Some(TaskStatus::Blocked),
+        "arrows_counterclockwise" | "loading" | "hourglass" => Some(TaskStatus::Blocked),
         "white_check_mark" | "heavy_check_mark" => Some(TaskStatus::Completed),
         _ => None,
     }
 }
 
-fn map_reactions_to_status(reactions: &Vec<ReactionItem>) -> HashSet<TaskStatus> {
+fn map_reactions_to_status(reactions: &Vec<SlackReaction>) -> HashSet<TaskStatus> {
     let mut status_set: HashSet<TaskStatus> = HashSet::new();
 
     for reaction in reactions {
-        match emoji_to_status(&reaction.item_type) {
+        match emoji_to_status(&reaction.name) {
             Some(status) => {
                 status_set.insert(status);
             }
             None => {
-                warn!("Wrong emoji type received: {}", &reaction.item_type);
+                warn!("Wrong emoji type received: {}", &reaction.name);
             }
         };
     }
@@ -105,15 +114,20 @@ pub struct SlackBot {
 
 #[derive(Debug, Deserialize)]
 struct MessageWithReactions {
-    #[serde(rename = "type")]
-    msg_type: String,
-    text: String,
-    reactions: Option<Vec<ReactionItem>>,
+    #[serde(rename = "type", default)]
+    msg_type: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    reactions: Option<Vec<SlackReaction>>,
+    #[serde(flatten, default)]
+    _extra: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
 struct ReactionsResponse {
     ok: bool,
+    #[serde(default)]
     message: Option<MessageWithReactions>,
 }
 
@@ -199,7 +213,10 @@ impl SlackBot {
                 }
             }
             "reaction_removed" => {
-                // TODO: update tasks status when reaction is removed
+                let res = self.handle_reaction_added(event).await;
+                if res.is_err() {
+                    error!("Failed to handle event: {:?}", res.err());
+                }
                 info!("Reaction removed - could update task status");
             }
             _ => {}
@@ -222,13 +239,10 @@ impl SlackBot {
             None => return Ok(()),
         };
 
-        let status = match emoji_to_status(reaction) {
-            Some(s) => s,
-            None => {
-                info!("Ignoring non-task emoji: {}", reaction);
-                return Ok(());
-            }
-        };
+        if emoji_to_status(reaction).is_none() {
+            info!("Ignoring non-task emoji: {}", reaction);
+            return Ok(());
+        }
 
         let item = match &event.item {
             Some(i) => i,
@@ -242,7 +256,7 @@ impl SlackBot {
 
         match self.fetch_message(&item.channel, &item.ts).await {
             Ok(message) => {
-                self.create_or_update_task(message, status, &item.channel, &item.ts)
+                self.create_or_update_task(message, &item.channel, &item.ts)
                     .await?;
             }
             Err(e) => error!("Failed to fetch message: {}", e),
@@ -285,7 +299,6 @@ impl SlackBot {
     async fn create_or_update_task(
         &self,
         slack_message: SlackMessage,
-        status: TaskStatus,
         channel: &str,
         message_timestamp: &str,
     ) -> Result<()> {
@@ -359,7 +372,7 @@ impl SlackBot {
         &self,
         channel: &str,
         timestamp: &str,
-    ) -> Result<Vec<ReactionItem>> {
+    ) -> Result<Vec<SlackReaction>> {
         let response = self
             .http_client
             .get("https://slack.com/api/reactions.get")
@@ -395,6 +408,7 @@ impl SlackBot {
                 .await?;
         }
 
+        info!("Finished periodically updating tasks");
         Ok(())
     }
 

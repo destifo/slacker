@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Clock, AlertCircle, CheckCircle2, Loader2, Zap } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle';
 
 interface Message {
   id: string;
@@ -93,6 +94,7 @@ export function TaskBoard() {
           </div>
           <p style={styles.subtitle}>Manage your team's work, fast</p>
         </div>
+        <ThemeToggle />
       </header>
       <div style={styles.boardContainer}>
         <TaskColumn
@@ -128,19 +130,19 @@ interface TaskColumnProps {
 function TaskColumn({ title, tasks, color, icon }: TaskColumnProps) {
   const colorStyles = {
     blue: {
-      gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      gradient: 'var(--gradient-blue)',
       light: '#818cf8',
-      glow: 'rgba(129, 140, 248, 0.2)',
+      glow: 'var(--glow-blue)',
     },
     orange: {
-      gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+      gradient: 'var(--gradient-orange)',
       light: '#fb923c',
-      glow: 'rgba(251, 146, 60, 0.2)',
+      glow: 'var(--glow-orange)',
     },
     green: {
-      gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+      gradient: 'var(--gradient-green)',
       light: '#34d399',
-      glow: 'rgba(52, 211, 153, 0.2)',
+      glow: 'var(--glow-green)',
     },
   };
 
@@ -216,19 +218,23 @@ const styles: Record<string, React.CSSProperties> = {
     height: '100vh',
     display: 'flex',
     flexDirection: 'column',
-    background: 'linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%)',
-    color: '#e2e8f0',
+    background: 'linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%)',
+    color: 'var(--text-primary)',
     overflow: 'hidden',
   },
   header: {
     padding: '2rem 2rem 1.5rem',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-    background: 'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 100%)',
+    borderBottom: '1px solid var(--border-color)',
+    background: 'linear-gradient(180deg, var(--column-bg) 0%, transparent 100%)',
     flexShrink: 0,
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '2rem',
   },
   headerContent: {
     maxWidth: '1400px',
-    margin: '0 auto',
+    flex: 1,
   },
   titleGroup: {
     display: 'flex',
@@ -239,10 +245,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '2rem',
     fontWeight: '700',
-    background: 'linear-gradient(135deg, #ffffff 0%, #a0aec0 100%)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
+    color: 'var(--text-primary)',
     margin: 0,
   },
   badge: {
@@ -250,13 +253,13 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '9999px',
     fontSize: '0.875rem',
     fontWeight: '600',
-    background: 'rgba(255, 255, 255, 0.1)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    backdropFilter: 'blur(10px)',
+    background: 'var(--button-bg)',
+    border: '1px solid var(--border-color)',
+    color: 'var(--text-secondary)',
   },
   subtitle: {
     fontSize: '0.875rem',
-    color: '#94a3b8',
+    color: 'var(--text-secondary)',
     margin: 0,
   },
   boardContainer: {
@@ -279,8 +282,8 @@ const styles: Record<string, React.CSSProperties> = {
   columnHeader: {
     padding: '1rem',
     borderRadius: '0.75rem 0.75rem 0 0',
-    background: 'rgba(255, 255, 255, 0.02)',
-    border: '1px solid rgba(255, 255, 255, 0.05)',
+    background: 'var(--column-bg)',
+    border: '1px solid var(--border-color)',
     borderBottom: 'none',
     flexShrink: 0,
   },
@@ -297,12 +300,12 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     color: '#ffffff',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+    boxShadow: '0 4px 12px var(--shadow-color)',
   },
   columnTitle: {
     fontSize: '0.875rem',
     fontWeight: '600',
-    color: '#e2e8f0',
+    color: 'var(--text-primary)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
     margin: 0,
@@ -311,15 +314,15 @@ const styles: Record<string, React.CSSProperties> = {
   count: {
     fontSize: '0.75rem',
     fontWeight: '600',
-    color: '#64748b',
+    color: 'var(--text-tertiary)',
     padding: '0.25rem 0.5rem',
-    background: 'rgba(255, 255, 255, 0.05)',
+    background: 'var(--button-bg)',
     borderRadius: '4px',
   },
   columnContent: {
     flex: 1,
-    background: 'rgba(255, 255, 255, 0.02)',
-    border: '1px solid rgba(255, 255, 255, 0.05)',
+    background: 'var(--card-bg)',
+    border: '1px solid var(--border-color)',
     borderTop: 'none',
     borderRadius: '0 0 0.75rem 0.75rem',
     padding: '1rem',
@@ -336,23 +339,22 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyIcon: {
     fontSize: '3rem',
-    color: '#334155',
+    color: 'var(--empty-icon-color)',
     fontWeight: '200',
   },
   emptyText: {
-    color: '#475569',
+    color: 'var(--empty-text-color)',
     fontSize: '0.875rem',
     margin: 0,
   },
   card: {
-    background: 'rgba(255, 255, 255, 0.03)',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
+    background: 'var(--card-bg)',
+    border: '1px solid var(--card-border)',
     borderRadius: '0.75rem',
     padding: '1rem',
     marginBottom: '0.75rem',
     cursor: 'pointer',
     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-    backdropFilter: 'blur(10px)',
   },
   cardHeader: {
     display: 'flex',
@@ -368,14 +370,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cardId: {
     fontSize: '0.75rem',
-    color: '#64748b',
+    color: 'var(--text-tertiary)',
     fontFamily: 'monospace',
     fontWeight: '500',
   },
   cardContent: {
     fontSize: '0.9375rem',
     fontWeight: '500',
-    color: '#e2e8f0',
+    color: 'var(--text-primary)',
     marginBottom: '0.75rem',
     lineHeight: '1.6',
     margin: '0 0 0.75rem 0',
@@ -387,7 +389,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cardDate: {
     fontSize: '0.75rem',
-    color: '#64748b',
+    color: 'var(--text-tertiary)',
     fontWeight: '500',
   },
   loadingContainer: {
@@ -397,7 +399,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     minHeight: '100vh',
     gap: '1.5rem',
-    background: 'linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%)',
+    background: 'linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%)',
   },
   spinnerWrapper: {
     position: 'relative' as const,
@@ -409,12 +411,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   spinner: {
     animation: 'spin 1s linear infinite',
-    color: '#818cf8',
-    filter: 'drop-shadow(0 0 8px rgba(129, 140, 248, 0.5))',
+    color: 'var(--accent-color)',
+    filter: 'drop-shadow(0 0 8px var(--glow-blue))',
   },
   loadingText: {
     fontSize: '1rem',
-    color: '#94a3b8',
+    color: 'var(--text-secondary)',
     fontWeight: '500',
     margin: 0,
   },
@@ -426,15 +428,15 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: '100vh',
     gap: '1.5rem',
     padding: '2rem',
-    background: 'linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%)',
+    background: 'linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%)',
   },
   errorIcon: {
-    color: '#f87171',
-    filter: 'drop-shadow(0 0 12px rgba(248, 113, 113, 0.5))',
+    color: '#ef4444',
+    filter: 'drop-shadow(0 0 12px rgba(239, 68, 68, 0.5))',
   },
   errorText: {
     fontSize: '1rem',
-    color: '#94a3b8',
+    color: 'var(--text-secondary)',
     textAlign: 'center' as const,
     maxWidth: '500px',
     margin: 0,
@@ -443,7 +445,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    background: 'var(--gradient-blue)',
     color: '#ffffff',
     padding: '0.75rem 1.5rem',
     borderRadius: '0.5rem',
@@ -452,7 +454,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
-    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
+    boxShadow: '0 4px 12px var(--glow-blue)',
   },
 };
 
