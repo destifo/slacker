@@ -87,4 +87,13 @@ impl TasksRepo {
 
         Ok(tasks)
     }
+
+    pub async fn get_tasks_by_person_id(&self, person_id: String) -> Result<Vec<Task>, DbErr> {
+        let tasks = TaskEntity::find()
+            .filter(task::Column::AssignedTo.eq(person_id))
+            .all(&self.db)
+            .await?;
+
+        Ok(tasks)
+    }
 }

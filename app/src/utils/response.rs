@@ -41,7 +41,7 @@ impl IntoResponse for APIResponse {
 }
 
 pub enum APIError {
-    BadRequest,
+    BadRequest(String),
     NotFound(String),
     UnAuthorized,
     Forbidden,
@@ -52,7 +52,13 @@ pub enum APIError {
 impl IntoResponse for APIError {
     fn into_response(self) -> Response {
         match self {
-            Self::BadRequest => (StatusCode::BAD_REQUEST).into_response(),
+            Self::BadRequest(msg) => (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "status": "error", "detail": msg,
+                })),
+            )
+                .into_response(),
             Self::NotFound(msg) => (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({"status": "error", "detail": msg,})),

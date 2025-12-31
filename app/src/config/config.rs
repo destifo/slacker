@@ -25,6 +25,14 @@ pub struct Config {
     pub user_email: String,
     pub user_name: String,
     pub slack_member_id: String,
+
+    pub google_client_id: String,
+    pub google_client_secret: String,
+    pub google_redirect_uri: String,
+
+    pub jwt_secret: String,
+    #[serde(default = "default_jwt_expiry")]
+    pub jwt_expiry_hours: i64,
 }
 
 fn default_port() -> u16 {
@@ -38,6 +46,10 @@ fn default_max_connections() -> u32 {
 }
 fn default_min_connections() -> u32 {
     2
+}
+
+fn default_jwt_expiry() -> i64 {
+    168
 }
 
 impl Config {

@@ -63,4 +63,19 @@ impl PersonsRepo {
             ))),
         }
     }
+
+    pub async fn get_by_email(&self, email: String) -> Result<Person, DbErr> {
+        let person = PersonEntity::find()
+            .filter(person::Column::Email.eq(&email))
+            .one(&self.db)
+            .await?;
+
+        match person {
+            Some(p) => Ok(p),
+            None => Err(DbErr::RecordNotFound(format!(
+                "Person with the email {} not found",
+                email
+            ))),
+        }
+    }
 }
