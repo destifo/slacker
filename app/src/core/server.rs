@@ -9,7 +9,7 @@ use crate::{
     core::state::AppState,
     database::{
         connect::{connect_database, run_migrations},
-        seed::seed_default_user,
+        // seed::seed_default_user,
     },
     routes::create_routers,
 };
@@ -17,7 +17,7 @@ use crate::{
 pub async fn create_server(config: Config) -> Result<(Router<()>, DatabaseConnection)> {
     let db_conn = connect_database(config.clone()).await?;
     run_migrations(&db_conn).await?;
-    seed_default_user(&db_conn, &config).await?;
+    // seed_default_user(&db_conn, &config).await?;
 
     let state = AppState {
         database: db_conn.clone(),

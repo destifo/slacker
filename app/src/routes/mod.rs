@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod tasks;
 
 use std::sync::Arc;
@@ -5,15 +6,29 @@ use std::sync::Arc;
 use axum::{middleware, Router};
 
 use crate::{
-    core::state::AppState, middlewares::user::inject_user, routes::tasks::task_routes,
+    core::state::AppState,
+    middlewares::auth::require_auth,
+    routes::{auth::auth_routes, tasks::task_routes},
     utils::global_error_handler::global_error_handler,
 };
 
 pub fn create_routers(state: Arc<AppState>) -> Router<()> {
-    let all_routers = Router::new()
-        .nest("/tasks", task_routes())
-        .layer(middleware::from_fn_with_state(state.clone(), inject_user))
-        .fallback(global_error_handler);
+    let public_routes = Router::new().nest("/auth", auth_routes());
 
-    Router::new().nest("/api", all_routers).with_state(state)
+    let protected_routes = Router::new()
+        .nest("/tasks", task_routes())
+        .nest("/auth", protected_auth_routes())
+        .layer(middleware::from_fn_with_state(state.clone(), require_auth));
+
+    Router::new()
+        .nest("/api", public_routes.merge(protected_routes))
+        .fallback(global_error_handler)
+        .with_state(state)
+}
+
+fn protected_auth_routes() -> Router<Arc<AppState>> {
+    use crate::handlers::auth::get_me;
+    use axum::routing::get;
+
+    Router::new().route("/me", get(get_me))
 }

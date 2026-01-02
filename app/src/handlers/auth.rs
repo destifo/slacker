@@ -5,19 +5,16 @@ use crate::{
     models::person::Model as Person,
     repos::persons::PersonsRepo,
     services::user::fetch_user_by_email,
-    utils::{
-        jwt::create_jwt,
-        response::{APIError, APIResponse},
-    },
+    utils::{jwt::create_jwt, response::APIError},
 };
 use axum::{
     extract::{Query, State},
+    http::StatusCode,
     response::{IntoResponse, Redirect},
     Json,
 };
-use migration::query;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tracing::{error, info};
 
 #[derive(Debug, Deserialize)]
@@ -37,12 +34,6 @@ struct GoogleUserInfo {
     picture: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct AuthResponse {
-    token: String,
-    person: Person,
-}
-
 pub async fn google_login(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let auth_url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope=openid%20email%20profile", 
@@ -56,7 +47,7 @@ pub async fn google_login(State(state): State<Arc<AppState>>) -> impl IntoRespon
 pub async fn google_callback(
     State(state): State<Arc<AppState>>,
     Query(query): Query<GoogleCallbackQuery>,
-) -> Result<Json<AuthResponse>, APIError> {
+) -> Result<Redirect, APIError> {
     let http_client = Client::new();
 
     let token_response = http_client
@@ -150,5 +141,17 @@ pub async fn google_callback(
         APIError::InternalServerError("Failed to create session".to_string())
     })?;
 
-    Ok(Json(AuthResponse { token, person }))
+    // Redirect to frontend with auth data
+    let frontend_url = format!(
+        "http://localhost:5173/auth/callback?token={}&name={}&email={}",
+        urlencoding::encode(&token),
+        urlencoding::encode(&person.name),
+        urlencoding::encode(&person.email)
+    );
+
+    Ok(Redirect::temporary(&frontend_url))
+}
+
+pub async fn get_me(person: Person) -> Result<Json<Person>, StatusCode> {
+    Ok(Json(person))
 }

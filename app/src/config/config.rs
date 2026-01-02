@@ -22,9 +22,9 @@ pub struct Config {
     pub bot_token: String,
     pub app_token: String,
 
-    pub user_email: String,
-    pub user_name: String,
-    pub slack_member_id: String,
+    // pub user_email: String,
+    // pub user_name: String,
+    // pub slack_member_id: String,
 
     pub google_client_id: String,
     pub google_client_secret: String,

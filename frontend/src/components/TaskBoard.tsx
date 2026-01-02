@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Clock, AlertCircle, CheckCircle2, Loader2, Zap } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
+import { UserMenu } from './UserMenu';
+import { useAuth } from '../hooks/useAuth';
 
 interface Message {
   id: string;
@@ -27,6 +29,7 @@ export function TaskBoard() {
   const [board, setBoard] = useState<TaskBoard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { person } = useAuth();
 
   useEffect(() => {
     fetchTasks();
@@ -92,9 +95,14 @@ export function TaskBoard() {
             <h1 style={styles.title}>Tasks</h1>
             <div style={styles.badge}>{totalTasks}</div>
           </div>
-          <p style={styles.subtitle}>Manage your team's work, fast</p>
+          <p style={styles.subtitle}>
+            {person ? `${person.name}'s workspace` : 'Manage your work, fast'}
+          </p>
         </div>
-        <ThemeToggle />
+        <div style={styles.headerActions}>
+          <ThemeToggle />
+          <UserMenu />
+        </div>
       </header>
       <div style={styles.boardContainer}>
         <TaskColumn
@@ -166,14 +174,16 @@ function TaskColumn({ title, tasks, color, icon }: TaskColumnProps) {
             <p style={styles.emptyText}>No tasks yet</p>
           </div>
         ) : (
-          tasks.map((task) => <TaskCard key={task.id} task={task} color={colors} />)
+          tasks.map((task, index) => (
+            <TaskCard key={task.id} task={task} color={colors} index={index} />
+          ))
         )}
       </div>
     </div>
   );
 }
 
-function TaskCard({ task, color }: { task: Task; color: { gradient: string; light: string; glow: string } }) {
+function TaskCard({ task, color, index }: { task: Task; color: { gradient: string; light: string; glow: string }; index: number }) {
   const [isHovered, setIsHovered] = useState(false);
 
   const formattedDate = new Date(task.created_at).toLocaleString('en-US', {
@@ -185,6 +195,7 @@ function TaskCard({ task, color }: { task: Task; color: { gradient: string; ligh
 
   const cardStyle = {
     ...styles.card,
+    animation: `fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${index * 0.05}s both`,
     ...(isHovered ? {
       transform: 'translateY(-2px)',
       boxShadow: `0 8px 30px ${color.glow}, 0 0 0 1px ${color.light}`,
@@ -235,6 +246,11 @@ const styles: Record<string, React.CSSProperties> = {
   headerContent: {
     maxWidth: '1400px',
     flex: 1,
+  },
+  headerActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
   },
   titleGroup: {
     display: 'flex',

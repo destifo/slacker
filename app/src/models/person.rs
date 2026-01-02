@@ -1,3 +1,8 @@
+use axum::{
+    async_trait,
+    extract::FromRequestParts,
+    http::{request::Parts, StatusCode},
+};
 use sea_orm::entity::prelude::*;
 use serde::Serialize;
 
@@ -11,6 +16,22 @@ pub struct Model {
     pub is_me: bool,
     // slack member id
     pub external_id: String,
+}
+
+#[async_trait]
+impl<S> FromRequestParts<S> for Model
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<Model>()
+            .cloned()
+            .ok_or(StatusCode::UNAUTHORIZED)
+    }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

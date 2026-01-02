@@ -229,11 +229,6 @@ impl SlackBot {
             None => return Ok(()),
         };
 
-        if user != &self.config.slack_member_id {
-            info!("Ignoring reaction from other user: {}", user);
-            return Ok(());
-        }
-
         let reaction = match &event.reaction {
             Some(r) => r,
             None => return Ok(()),
