@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { User, LogOut, ChevronDown, Loader2 } from "lucide-react";
+import { LogOut, ChevronDown, Loader2, Plus, Trash2 } from "lucide-react";
 
 export function UserMenu() {
-  const { person, logout, isLoading } = useAuth();
+  const { person, logout, isLoading, accounts, removeAccount, addAccount } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -24,8 +24,21 @@ export function UserMenu() {
     setIsLoggingOut(true);
     setTimeout(() => {
       logout();
-      window.location.href = "/";
+      // If no accounts left, redirect to login
+      if (accounts.length === 1) {
+        window.location.href = "/";
+      }
+      setIsLoggingOut(false);
+      setIsOpen(false);
     }, 500);
+  };
+
+  const handleRemoveAccount = (email: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm(`Remove account ${email}?`)) {
+      removeAccount(email);
+      setIsOpen(false);
+    }
   };
 
   if (isLoading || !person) {
@@ -81,6 +94,43 @@ export function UserMenu() {
               <span style={styles.userEmail}>{person.email}</span>
             </div>
           </div>
+
+          <div style={styles.divider} />
+
+          {accounts.length > 1 && (
+            <>
+              <div style={styles.accountsSection}>
+                <span style={styles.sectionTitle}>All Accounts</span>
+                {accounts
+                  .filter((acc) => acc.person.email !== person.email)
+                  .map((account) => (
+                    <div key={account.person.email} style={styles.accountRow}>
+                      <div style={styles.accountInfo}>
+                        <span style={styles.accountName}>
+                          {account.person.name}
+                        </span>
+                        <span style={styles.accountEmail}>
+                          {account.person.email}
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => handleRemoveAccount(account.person.email, e)}
+                        style={styles.removeButton}
+                        title="Remove account"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+              </div>
+              <div style={styles.divider} />
+            </>
+          )}
+
+          <button onClick={addAccount} style={styles.menuItem}>
+            <Plus size={16} />
+            <span>Add another account</span>
+          </button>
 
           <div style={styles.divider} />
 
@@ -258,6 +308,59 @@ const styles: Record<string, React.CSSProperties> = {
   },
   logoutItem: {
     color: "#ef4444",
+  },
+  accountsSection: {
+    padding: "0.75rem 0",
+  },
+  sectionTitle: {
+    display: "block",
+    padding: "0.5rem 1.25rem",
+    fontSize: "0.6875rem",
+    fontWeight: "600",
+    color: "var(--text-tertiary)",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  },
+  accountRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0.75rem 1.25rem",
+    gap: "0.75rem",
+  },
+  accountInfo: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.125rem",
+    flex: 1,
+    minWidth: 0,
+  },
+  accountName: {
+    fontSize: "0.8125rem",
+    fontWeight: "500",
+    color: "var(--text-primary)",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  accountEmail: {
+    fontSize: "0.75rem",
+    color: "var(--text-secondary)",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  removeButton: {
+    padding: "0.375rem",
+    background: "transparent",
+    border: "1px solid var(--border-color)",
+    borderRadius: "6px",
+    cursor: "pointer",
+    color: "#ef4444",
+    transition: "all 0.15s ease",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
   spinner: {
     animation: "spin 1s linear infinite",

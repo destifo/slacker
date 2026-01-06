@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { TaskBoard } from './components/TaskBoard'
 import { LoginPage } from './components/LoginPage'
 import { AuthCallback } from './components/AuthCallback'
+import { ProjectsPage } from './components/ProjectsPage'
 import { ThemeProvider } from './hooks/useTheme'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { Loader2 } from 'lucide-react'
@@ -41,6 +42,11 @@ function AppContent() {
   // Show login page if not authenticated
   if (!isAuthenticated) {
     return <LoginPage />
+  }
+
+  // Handle authenticated routes
+  if (currentPath === '/projects') {
+    return <ProjectsPage />
   }
 
   // Show task board for authenticated users

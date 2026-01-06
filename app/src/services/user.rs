@@ -1,11 +1,9 @@
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::config::config::Config;
-
-pub async fn fetch_user_by_email(
-    config: &Config,
-    http_client: &Client,
+pub async fn fetch_user_by_email_with_config(
+    bot_token: &str,
+    _client_id: &str,
     email: &str,
 ) -> anyhow::Result<(String, String)> {
     #[derive(Debug, Deserialize)]
@@ -27,13 +25,11 @@ pub async fn fetch_user_by_email(
         error: Option<String>,
     }
 
+    let http_client = Client::new();
     let url = "https://slack.com/api/users.lookupByEmail";
     let response = http_client
         .get(url)
-        .header(
-            "Autorization",
-            format!("Bearer {}", config.bot_token.clone()),
-        )
+        .header("Authorization", format!("Bearer {}", bot_token))
         .query(&[("email", email)])
         .send()
         .await?

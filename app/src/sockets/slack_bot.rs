@@ -10,11 +10,15 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{error, info, warn};
 
 use crate::{
-    config::config::Config,
+    config::{config::Config, workspaces::WorkspacesConfig},
     models::task::TaskStatus,
-    repos::{messages::MessagesRepo, persons::PersonsRepo, tasks::TasksRepo},
+    repos::{messages::MessagesRepo, persons::PersonsRepo, tasks::TasksRepo, workspace_links::WorkspaceLinksRepo},
     services::slack_service::eval_status_from_reactions,
 };
+
+// NOTE: This SlackBot currently uses Config which no longer has bot_token/app_token.
+// TODO: Refactor to use WorkspacesConfig and create one bot instance per workspace.
+// Each workspace should have its own WebSocket connection.
 
 #[derive(Debug, Deserialize)]
 struct ConnectionResponse {
@@ -107,7 +111,9 @@ fn map_reactions_to_status(reactions: &Vec<SlackReaction>) -> HashSet<TaskStatus
 }
 
 pub struct SlackBot {
-    config: Config,
+    workspace_name: String,
+    app_token: String,
+    bot_token: String,
     db: DatabaseConnection,
     http_client: Client,
 }
@@ -132,9 +138,11 @@ struct ReactionsResponse {
 }
 
 impl SlackBot {
-    pub fn new(config: Config, db: DatabaseConnection) -> Self {
+    pub fn new(workspace_name: String, app_token: String, bot_token: String, db: DatabaseConnection) -> Self {
         Self {
-            config,
+            workspace_name,
+            app_token,
+            bot_token,
             db,
             http_client: Client::new(),
         }
@@ -144,7 +152,7 @@ impl SlackBot {
         let response = self
             .http_client
             .post("https://slack.com/api/apps.connections.open")
-            .header("Authorization", format!("Bearer {}", self.config.app_token))
+            .header("Authorization", format!("Bearer {}", self.app_token))
             .send()
             .await?
             .json::<ConnectionResponse>()
@@ -264,7 +272,7 @@ impl SlackBot {
         let response = self
             .http_client
             .get("https://slack.com/api/conversations.history")
-            .header("Authorization", format!("Bearer {}", self.config.bot_token))
+            .header("Authorization", format!("Bearer {}", self.bot_token))
             .query(&[
                 ("channel", channel),
                 ("latest", timestamp),
@@ -300,8 +308,38 @@ impl SlackBot {
         let persons_repo = PersonsRepo::new(self.db.clone());
         let messages_repo = MessagesRepo::new(self.db.clone());
         let tasks_repo = TasksRepo::new(self.db.clone());
+        let workspace_links_repo = WorkspaceLinksRepo::new(self.db.clone());
 
-        let person = persons_repo.get_by_external_id(slack_message.user).await?;
+        // Get person by external_id (Slack member ID)
+        let person = persons_repo.get_by_external_id(slack_message.user.clone()).await?;
+
+        // Check if person is linked to this workspace
+        match workspace_links_repo
+            .get_by_person_and_workspace(person.id.clone(), self.workspace_name.clone())
+            .await
+        {
+            Ok(link) if link.is_linked => {
+                info!(
+                    "User {} is linked to workspace {} - processing task",
+                    person.email, self.workspace_name
+                );
+            }
+            Ok(_) => {
+                info!(
+                    "User {} is not linked to workspace {} - skipping task creation",
+                    person.email, self.workspace_name
+                );
+                return Ok(());
+            }
+            Err(_) => {
+                info!(
+                    "User {} has no link to workspace {} - skipping task creation",
+                    person.email, self.workspace_name
+                );
+                return Ok(());
+            }
+        }
+
         let message_external_id = format!("slack:{}:{}", channel, message_timestamp);
         let message = messages_repo
             .get_message_by_external_id(message_external_id.clone())
@@ -349,7 +387,7 @@ impl SlackBot {
                 tasks_repo.change_status(task.id.clone(), status).await?;
             }
             Err(DbErr::RecordNotFound(e)) => {
-                error!("Task not found, creating new task: {}", e);
+                info!("Task not found, creating new task: {}", e);
                 tasks_repo
                     .create(status, person, chrono::Utc::now().naive_utc(), message)
                     .await?;
@@ -371,7 +409,7 @@ impl SlackBot {
         let response = self
             .http_client
             .get("https://slack.com/api/reactions.get")
-            .header("Authorization", format!("Bearer {}", self.config.bot_token))
+            .header("Authorization", format!("Bearer {}", self.bot_token))
             .query(&[("channel", channel), ("timestamp", timestamp)])
             .send()
             .await?

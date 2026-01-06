@@ -1,0 +1,12 @@
+rekash:
+  app_token: xapp-1-A01-example-token
+  bot_token: xoxb-123456789-example-bot-token
+
+personal:
+  app_token: xapp-1-A02-another-token
+  bot_token: xoxb-987654321-another-bot-token
+
+client_project:
+  app_token: xapp-1-A03-client-token
+  bot_token: xoxb-111222333-client-bot-token
+

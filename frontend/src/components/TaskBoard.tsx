@@ -3,6 +3,8 @@ import axios from 'axios';
 import { Clock, AlertCircle, CheckCircle2, Loader2, Zap } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { TaskModal } from './TaskModal';
 import { useAuth } from '../hooks/useAuth';
 
 interface Message {
@@ -29,7 +31,9 @@ export function TaskBoard() {
   const [board, setBoard] = useState<TaskBoard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { person } = useAuth();
+  const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const { activeEmail } = useAuth();
 
   useEffect(() => {
     fetchTasks();
@@ -37,6 +41,13 @@ export function TaskBoard() {
     const interval = setInterval(fetchTasks, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Refetch when account switches or workspace changes
+  useEffect(() => {
+    if (activeEmail) {
+      fetchTasks();
+    }
+  }, [activeEmail, activeWorkspace]);
 
   const fetchTasks = async () => {
     try {
@@ -87,19 +98,39 @@ export function TaskBoard() {
 
   const totalTasks = board.in_progress.length + board.blocked.length + board.completed.length;
 
+  const handleWorkspaceChange = (workspaceName: string | null) => {
+    setActiveWorkspace(workspaceName);
+  };
+
+  const handleTaskClick = (taskId: string) => {
+    setSelectedTaskId(taskId);
+  };
+
+  const handleCloseModal = () => {
+    setSelectedTaskId(null);
+  };
+
   return (
     <div style={styles.container}>
       <header style={styles.header}>
         <div style={styles.headerContent}>
-          <div style={styles.titleGroup}>
-            <h1 style={styles.title}>Tasks</h1>
+          <div style={styles.workspaceTitle}>
+            {activeWorkspace ? (
+              <>
+                <span style={styles.workspaceLabel}>Workspace:</span>{' '}
+                <span style={styles.workspaceName}>{activeWorkspace}</span>
+              </>
+            ) : (
+              <span style={styles.workspaceLabel}>Select a workspace</span>
+            )}
+          </div>
+          <div style={styles.tasksInfo}>
+            <span style={styles.tasksLabel}>Tasks</span>
             <div style={styles.badge}>{totalTasks}</div>
           </div>
-          <p style={styles.subtitle}>
-            {person ? `${person.name}'s workspace` : 'Manage your work, fast'}
-          </p>
         </div>
         <div style={styles.headerActions}>
+          <WorkspaceSwitcher onWorkspaceChange={handleWorkspaceChange} />
           <ThemeToggle />
           <UserMenu />
         </div>
@@ -110,20 +141,29 @@ export function TaskBoard() {
           tasks={board.in_progress}
           color="blue"
           icon={<Clock size={18} />}
+          onTaskClick={handleTaskClick}
         />
         <TaskColumn
           title="Blocked"
           tasks={board.blocked}
           color="orange"
           icon={<AlertCircle size={18} />}
+          onTaskClick={handleTaskClick}
         />
         <TaskColumn
           title="Completed"
           tasks={board.completed}
           color="green"
           icon={<CheckCircle2 size={18} />}
+          onTaskClick={handleTaskClick}
         />
       </div>
+
+      <TaskModal
+        taskId={selectedTaskId || ''}
+        isOpen={!!selectedTaskId}
+        onClose={handleCloseModal}
+      />
     </div>
   );
 }
@@ -133,9 +173,10 @@ interface TaskColumnProps {
   tasks: Task[];
   color: 'blue' | 'orange' | 'green';
   icon: React.ReactNode;
+  onTaskClick: (taskId: string) => void;
 }
 
-function TaskColumn({ title, tasks, color, icon }: TaskColumnProps) {
+function TaskColumn({ title, tasks, color, icon, onTaskClick }: TaskColumnProps) {
   const colorStyles = {
     blue: {
       gradient: 'var(--gradient-blue)',
@@ -175,7 +216,7 @@ function TaskColumn({ title, tasks, color, icon }: TaskColumnProps) {
           </div>
         ) : (
           tasks.map((task, index) => (
-            <TaskCard key={task.id} task={task} color={colors} index={index} />
+            <TaskCard key={task.id} task={task} color={colors} index={index} onClick={() => onTaskClick(task.id)} />
           ))
         )}
       </div>
@@ -183,7 +224,7 @@ function TaskColumn({ title, tasks, color, icon }: TaskColumnProps) {
   );
 }
 
-function TaskCard({ task, color, index }: { task: Task; color: { gradient: string; light: string; glow: string }; index: number }) {
+function TaskCard({ task, color, index, onClick }: { task: Task; color: { gradient: string; light: string; glow: string }; index: number; onClick: () => void }) {
   const [isHovered, setIsHovered] = useState(false);
 
   const formattedDate = new Date(task.created_at).toLocaleString('en-US', {
@@ -208,6 +249,7 @@ function TaskCard({ task, color, index }: { task: Task; color: { gradient: strin
       style={cardStyle}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onClick={onClick}
     >
       <div style={styles.cardHeader}>
         <div style={{ ...styles.statusDot, background: color.gradient }} />
@@ -244,25 +286,36 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '2rem',
   },
   headerContent: {
-    maxWidth: '1400px',
     flex: 1,
+    textAlign: 'left',
   },
   headerActions: {
     display: 'flex',
     alignItems: 'center',
-    gap: '1rem',
+    gap: '0.75rem',
   },
-  titleGroup: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1rem',
-    marginBottom: '0.5rem',
-  },
-  title: {
+  workspaceTitle: {
     fontSize: '2rem',
     fontWeight: '700',
     color: 'var(--text-primary)',
-    margin: 0,
+    marginBottom: '0.5rem',
+    textAlign: 'left',
+  },
+  workspaceLabel: {
+    color: 'var(--text-secondary)',
+  },
+  workspaceName: {
+    color: 'var(--accent-color)',
+  },
+  tasksInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+  },
+  tasksLabel: {
+    fontSize: '0.875rem',
+    color: 'var(--text-tertiary)',
+    fontWeight: '500',
   },
   badge: {
     padding: '0.25rem 0.75rem',
@@ -272,11 +325,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'var(--button-bg)',
     border: '1px solid var(--border-color)',
     color: 'var(--text-secondary)',
-  },
-  subtitle: {
-    fontSize: '0.875rem',
-    color: 'var(--text-secondary)',
-    margin: 0,
   },
   boardContainer: {
     display: 'flex',

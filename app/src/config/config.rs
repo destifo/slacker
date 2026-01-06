@@ -14,18 +14,6 @@ pub struct Config {
     #[serde(default = "default_min_connections")]
     pub min_connections: u32,
 
-    pub app_id: String,
-    pub client_id: String,
-    pub client_secret: String,
-    pub signing_secret: String,
-    pub verification_token: String,
-    pub bot_token: String,
-    pub app_token: String,
-
-    // pub user_email: String,
-    // pub user_name: String,
-    // pub slack_member_id: String,
-
     pub google_client_id: String,
     pub google_client_secret: String,
     pub google_redirect_uri: String,

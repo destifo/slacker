@@ -61,4 +61,7 @@ temp/
 target/doc/
 
 # Rust analyzer
-rust-project.json
+rust-project.jsonworkspaces.yaml
+
+# configuration files
+workspaces.yaml
