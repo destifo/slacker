@@ -31,18 +31,18 @@ export function ThemeToggle() {
       >
         <Icon size={18} />
       </button>
-      
+
       {isOpen && (
         <>
-          <div 
-            style={styles.backdrop} 
+          <div
+            style={styles.backdrop}
             onClick={() => setIsOpen(false)}
           />
           <div style={styles.menu}>
             {themes.map((t) => {
               const ThemeIcon = t.icon;
               const isActive = theme === t.value;
-              
+
               return (
                 <button
                   key={t.value}
@@ -135,4 +135,3 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--accent-color)',
   },
 };
-

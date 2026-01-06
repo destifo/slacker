@@ -3,7 +3,10 @@ use std::sync::Arc;
 use crate::{
     core::state::AppState,
     models::{change::Model as Change, person::Model as Person, task::TaskStatus},
-    repos::{changes::ChangesRepo, messages::MessagesRepo, tasks::TasksRepo, workspace_links::WorkspaceLinksRepo},
+    repos::{
+        changes::ChangesRepo, messages::MessagesRepo, tasks::TasksRepo,
+        workspace_links::WorkspaceLinksRepo,
+    },
     utils::response::{APIError, APIResponse},
 };
 use axum::{
@@ -105,7 +108,10 @@ pub async fn get_tasks_board(
     for task in all_tasks {
         // Only include tasks where the assigned person is linked to the active workspace
         let person_workspace = workspace_links_repo
-            .get_by_person_and_workspace(task.assigned_to.clone(), active_workspace.workspace_name.clone())
+            .get_by_person_and_workspace(
+                task.assigned_to.clone(),
+                active_workspace.workspace_name.clone(),
+            )
             .await;
 
         // Skip if person not linked to this workspace
@@ -148,15 +154,19 @@ pub async fn get_task_detail(
     let changes_repo = ChangesRepo::new(state.database.clone());
 
     // Get task
-    let task = tasks_repo.get(task_id.clone()).await.map_err(|_| {
-        APIError::NotFound("Task not found".to_string())
-    })?;
+    let task = tasks_repo
+        .get(task_id.clone())
+        .await
+        .map_err(|_| APIError::NotFound("Task not found".to_string()))?;
 
     // Get message
     let message = messages_repo.get_by_id(task.message_id.clone()).await?;
 
     // Get change history
-    let changes = changes_repo.get_all_for_task(task_id).await.unwrap_or_default();
+    let changes = changes_repo
+        .get_all_for_task(task_id)
+        .await
+        .unwrap_or_default();
 
     // Construct Slack link
     // Format: https://slack.com/archives/{channel}/p{timestamp_without_dot}

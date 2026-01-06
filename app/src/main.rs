@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
 
     let server = axum_server::bind(addr).serve(server.into_make_service());
     info!("Server starting on {}", addr);
-    
+
     if let Err(e) = server.await {
         error!("Server failed: {}", e);
     }

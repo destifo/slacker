@@ -77,4 +77,3 @@ jobs:
           else
             echo "⚠️ Pull request - image was built but not pushed" >> $GITHUB_STEP_SUMMARY
           fi
-

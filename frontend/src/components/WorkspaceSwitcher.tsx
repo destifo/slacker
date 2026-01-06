@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, ChevronDown, FolderKanban, Link, Unlink, Settings, Plus } from "lucide-react";
 import axios from "axios";
 
@@ -40,11 +40,7 @@ export function WorkspaceSwitcher({ onWorkspaceChange }: WorkspaceSwitcherProps)
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    fetchWorkspaces();
-  }, []);
-
-  const fetchWorkspaces = async () => {
+  const fetchWorkspaces = useCallback(async () => {
     try {
       const response = await axios.get<WorkspacesResponse>("/api/workspaces");
       setWorkspaces(response.data.workspaces);
@@ -57,7 +53,11 @@ export function WorkspaceSwitcher({ onWorkspaceChange }: WorkspaceSwitcherProps)
     } finally {
       setLoading(false);
     }
-  };
+  }, [onWorkspaceChange]);
+
+  useEffect(() => {
+    fetchWorkspaces();
+  }, [fetchWorkspaces]);
 
   const handleSwitch = async (workspaceName: string) => {
     setSwitching(workspaceName);
@@ -126,8 +126,8 @@ export function WorkspaceSwitcher({ onWorkspaceChange }: WorkspaceSwitcherProps)
           {activeWorkspace?.name || "No workspace"}
         </span>
         {activeWorkspace && (
-          <span 
-            style={activeWorkspace.is_bot_connected ? styles.triggerStatusOnline : styles.triggerStatusOffline} 
+          <span
+            style={activeWorkspace.is_bot_connected ? styles.triggerStatusOnline : styles.triggerStatusOffline}
             title={activeWorkspace.is_bot_connected ? "Bot connected" : "Bot offline"}
           />
         )}
@@ -526,4 +526,3 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "all 0.15s ease",
   },
 };
-

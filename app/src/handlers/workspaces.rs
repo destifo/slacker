@@ -1,18 +1,28 @@
 use std::sync::Arc;
 
-use axum::{extract::{Path, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
-use axum::extract::Query;
 use crate::{
     config::workspaces::{WorkspaceConfig, WorkspacesConfig},
     core::state::AppState,
-    models::{person::Model as Person, workspace_link::Model as WorkspaceLink, workspace_settings::EmojiMappings},
-    repos::{workspace_links::WorkspaceLinksRepo, workspace_settings::WorkspaceSettingsRepo, persons::PersonsRepo},
+    models::{
+        person::Model as Person, workspace_link::Model as WorkspaceLink,
+        workspace_settings::EmojiMappings,
+    },
+    repos::{
+        persons::PersonsRepo, workspace_links::WorkspaceLinksRepo,
+        workspace_settings::WorkspaceSettingsRepo,
+    },
     services::user::fetch_user_by_email_with_config,
-    utils::{response::APIError, crypto::generate_uuid},
+    utils::{crypto::generate_uuid, response::APIError},
 };
+use axum::extract::Query;
 
 #[derive(Debug, Serialize)]
 pub struct WorkspaceInfo {
@@ -50,10 +60,12 @@ pub async fn list_workspaces(
     person: Person,
 ) -> Result<Json<WorkspaceListResponse>, APIError> {
     // Load and decrypt workspaces from YAML
-    let workspaces_config = WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key).map_err(|e| {
-        error!("Failed to load workspaces config: {}", e);
-        APIError::InternalServerError("Failed to load workspaces configuration".to_string())
-    })?;
+    let workspaces_config =
+        WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
+            .map_err(|e| {
+                error!("Failed to load workspaces config: {}", e);
+                APIError::InternalServerError("Failed to load workspaces configuration".to_string())
+            })?;
 
     let workspace_links_repo = WorkspaceLinksRepo::new(state.database.clone());
     let user_links = workspace_links_repo
@@ -70,7 +82,7 @@ pub async fn list_workspaces(
         .map(|name| {
             let link = user_links.iter().find(|l| &l.workspace_name == name);
             let bot_status = bot_statuses.iter().find(|s| &s.workspace_name == name);
-            
+
             WorkspaceInfo {
                 name: name.clone(),
                 is_linked: link.map(|l| l.is_linked).unwrap_or(false),
@@ -78,7 +90,8 @@ pub async fn list_workspaces(
                 slack_member_id: link.and_then(|l| l.slack_member_id.clone()),
                 is_bot_connected: bot_status.map(|s| s.is_connected).unwrap_or(false),
                 bot_connected_at: bot_status.and_then(|s| s.connected_at.map(|t| t.to_rfc3339())),
-                bot_last_heartbeat: bot_status.and_then(|s| s.last_heartbeat.map(|t| t.to_rfc3339())),
+                bot_last_heartbeat: bot_status
+                    .and_then(|s| s.last_heartbeat.map(|t| t.to_rfc3339())),
                 bot_error: bot_status.and_then(|s| s.error_message.clone()),
                 is_syncing: bot_status.map(|s| s.is_syncing).unwrap_or(false),
                 sync_progress: bot_status.and_then(|s| s.sync_progress.clone()),
@@ -100,10 +113,12 @@ pub async fn link_workspace(
     );
 
     // Load and decrypt workspace config
-    let workspaces_config = WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key).map_err(|e| {
-        error!("Failed to load workspaces config: {}", e);
-        APIError::InternalServerError("Failed to load workspaces configuration".to_string())
-    })?;
+    let workspaces_config =
+        WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
+            .map_err(|e| {
+                error!("Failed to load workspaces config: {}", e);
+                APIError::InternalServerError("Failed to load workspaces configuration".to_string())
+            })?;
 
     let workspace_config = workspaces_config
         .get_workspace(&payload.workspace_name)
@@ -112,7 +127,11 @@ pub async fn link_workspace(
     // Debug: log token prefix to verify it's loading correctly
     info!(
         "Using bot_token starting with: {}...",
-        &workspace_config.bot_token.chars().take(15).collect::<String>()
+        &workspace_config
+            .bot_token
+            .chars()
+            .take(15)
+            .collect::<String>()
     );
 
     // Check if user exists in this Slack workspace
@@ -133,7 +152,11 @@ pub async fn link_workspace(
     // Link the workspace
     let workspace_links_repo = WorkspaceLinksRepo::new(state.database.clone());
     let link = workspace_links_repo
-        .link_workspace(person.id.clone(), payload.workspace_name.clone(), slack_member_id.clone())
+        .link_workspace(
+            person.id.clone(),
+            payload.workspace_name.clone(),
+            slack_member_id.clone(),
+        )
         .await
         .map_err(|e| {
             error!("Failed to link workspace: {}", e);
@@ -143,7 +166,10 @@ pub async fn link_workspace(
     // Update person's external_id with Slack member ID if not already set
     if person.external_id.is_empty() {
         let persons_repo = PersonsRepo::new(state.database.clone());
-        if let Err(e) = persons_repo.update_external_id(person.id.clone(), slack_member_id.clone()).await {
+        if let Err(e) = persons_repo
+            .update_external_id(person.id.clone(), slack_member_id.clone())
+            .await
+        {
             error!("Failed to update person's external_id: {}", e);
             // Don't fail the request, just log the error
         } else {
@@ -157,7 +183,7 @@ pub async fn link_workspace(
     let db = state.database.clone();
     let bot_status = state.bot_status.clone();
     let member_id = slack_member_id.clone();
-    
+
     tokio::spawn(async move {
         let syncer = crate::sockets::slack_bot::InitialSyncer::new(
             workspace_name.clone(),
@@ -165,16 +191,25 @@ pub async fn link_workspace(
             db,
             bot_status,
         );
-        
-        info!("Starting initial sync for newly linked workspace: {}", workspace_name);
+
+        info!(
+            "Starting initial sync for newly linked workspace: {}",
+            workspace_name
+        );
         if let Err(e) = syncer.perform_initial_sync(&member_id).await {
-            error!("Initial sync failed for workspace {}: {}", workspace_name, e);
+            error!(
+                "Initial sync failed for workspace {}: {}",
+                workspace_name, e
+            );
         }
     });
 
     Ok(Json(LinkWorkspaceResponse {
         success: true,
-        message: format!("Successfully linked to workspace '{}'. Syncing your data...", payload.workspace_name),
+        message: format!(
+            "Successfully linked to workspace '{}'. Syncing your data...",
+            payload.workspace_name
+        ),
         link: Some(link),
     }))
 }
@@ -185,7 +220,7 @@ pub async fn unlink_workspace(
     Json(payload): Json<LinkWorkspaceRequest>,
 ) -> Result<Json<LinkWorkspaceResponse>, APIError> {
     let workspace_links_repo = WorkspaceLinksRepo::new(state.database.clone());
-    
+
     workspace_links_repo
         .unlink_workspace(person.id, payload.workspace_name.clone())
         .await
@@ -196,7 +231,10 @@ pub async fn unlink_workspace(
 
     Ok(Json(LinkWorkspaceResponse {
         success: true,
-        message: format!("Successfully unlinked from workspace '{}'", payload.workspace_name),
+        message: format!(
+            "Successfully unlinked from workspace '{}'",
+            payload.workspace_name
+        ),
         link: None,
     }))
 }
@@ -212,7 +250,7 @@ pub async fn switch_workspace(
     );
 
     let workspace_links_repo = WorkspaceLinksRepo::new(state.database.clone());
-    
+
     let link = workspace_links_repo
         .set_active_workspace(person.id, payload.workspace_name.clone())
         .await
@@ -233,7 +271,7 @@ pub async fn get_active_workspace(
     person: Person,
 ) -> Result<Json<Option<WorkspaceLink>>, APIError> {
     let workspace_links_repo = WorkspaceLinksRepo::new(state.database.clone());
-    
+
     match workspace_links_repo.get_active_workspace(person.id).await {
         Ok(link) => Ok(Json(Some(link))),
         Err(_) => Ok(Json(None)),
@@ -257,22 +295,30 @@ pub struct SetupWorkspaceResponse {
 /// Tokens are encrypted before being stored
 pub async fn setup_workspace(
     State(state): State<Arc<AppState>>,
-    person: Person,  // Requires auth!
+    person: Person, // Requires auth!
     Json(payload): Json<SetupWorkspaceRequest>,
 ) -> Result<Json<SetupWorkspaceResponse>, APIError> {
-    info!("User {} setting up workspace: {}", person.email, payload.workspace_name);
+    info!(
+        "User {} setting up workspace: {}",
+        person.email, payload.workspace_name
+    );
 
     // Validate tokens
     if !payload.app_token.starts_with("xapp-") {
-        return Err(APIError::BadRequest("Invalid app token format. Should start with 'xapp-'".to_string()));
+        return Err(APIError::BadRequest(
+            "Invalid app token format. Should start with 'xapp-'".to_string(),
+        ));
     }
     if !payload.bot_token.starts_with("xoxb-") {
-        return Err(APIError::BadRequest("Invalid bot token format. Should start with 'xoxb-'".to_string()));
+        return Err(APIError::BadRequest(
+            "Invalid bot token format. Should start with 'xoxb-'".to_string(),
+        ));
     }
 
     // Load and decrypt existing config (to avoid double-encrypting existing tokens)
-    let mut workspaces_config = WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
-        .unwrap_or_else(|_| WorkspacesConfig::new());
+    let mut workspaces_config =
+        WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
+            .unwrap_or_else(|_| WorkspacesConfig::new());
 
     // Clone tokens for bot spawning before moving into config
     let app_token_for_bot = payload.app_token.clone();
@@ -295,7 +341,10 @@ pub async fn setup_workspace(
             APIError::InternalServerError("Failed to save workspace configuration".to_string())
         })?;
 
-    info!("Workspace '{}' configured and encrypted successfully", payload.workspace_name);
+    info!(
+        "Workspace '{}' configured and encrypted successfully",
+        payload.workspace_name
+    );
 
     // Dynamically spawn the bot for this workspace
     state.spawn_bot(
@@ -306,7 +355,10 @@ pub async fn setup_workspace(
 
     Ok(Json(SetupWorkspaceResponse {
         success: true,
-        message: format!("Workspace '{}' configured and bot started successfully!", payload.workspace_name),
+        message: format!(
+            "Workspace '{}' configured and bot started successfully!",
+            payload.workspace_name
+        ),
     }))
 }
 
@@ -327,22 +379,28 @@ pub async fn get_workspace_settings(
     Path(workspace_name): Path<String>,
 ) -> Result<Json<WorkspaceSettingsResponse>, APIError> {
     // Check if workspace exists
-    let workspaces_config = WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
-        .map_err(|e| {
-            error!("Failed to load workspaces config: {}", e);
-            APIError::InternalServerError("Failed to load workspaces configuration".to_string())
-        })?;
+    let workspaces_config =
+        WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
+            .map_err(|e| {
+                error!("Failed to load workspaces config: {}", e);
+                APIError::InternalServerError("Failed to load workspaces configuration".to_string())
+            })?;
 
     let workspace_config = workspaces_config.get_workspace(&workspace_name);
     if workspace_config.is_none() {
-        return Err(APIError::NotFound(format!("Workspace '{}' not found", workspace_name)));
+        return Err(APIError::NotFound(format!(
+            "Workspace '{}' not found",
+            workspace_name
+        )));
     }
 
     let config = workspace_config.unwrap();
 
     // Get emoji mappings from database
     let settings_repo = WorkspaceSettingsRepo::new(state.database.clone());
-    let emoji_mappings = settings_repo.get_emoji_mappings(&workspace_name).await
+    let emoji_mappings = settings_repo
+        .get_emoji_mappings(&workspace_name)
+        .await
         .map_err(|e| {
             error!("Failed to get workspace settings: {}", e);
             APIError::InternalServerError("Failed to get workspace settings".to_string())
@@ -369,28 +427,37 @@ pub async fn update_workspace_tokens(
     Path(workspace_name): Path<String>,
     Json(payload): Json<UpdateTokenRequest>,
 ) -> Result<Json<SetupWorkspaceResponse>, APIError> {
-    info!("User {} updating tokens for workspace: {}", person.email, workspace_name);
+    info!(
+        "User {} updating tokens for workspace: {}",
+        person.email, workspace_name
+    );
 
     // Validate tokens if provided
     if let Some(ref app_token) = payload.app_token {
         if !app_token.starts_with("xapp-") {
-            return Err(APIError::BadRequest("Invalid app token format. Should start with 'xapp-'".to_string()));
+            return Err(APIError::BadRequest(
+                "Invalid app token format. Should start with 'xapp-'".to_string(),
+            ));
         }
     }
     if let Some(ref bot_token) = payload.bot_token {
         if !bot_token.starts_with("xoxb-") {
-            return Err(APIError::BadRequest("Invalid bot token format. Should start with 'xoxb-'".to_string()));
+            return Err(APIError::BadRequest(
+                "Invalid bot token format. Should start with 'xoxb-'".to_string(),
+            ));
         }
     }
 
     // Load existing config
-    let mut workspaces_config = WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
-        .map_err(|e| {
-            error!("Failed to load workspaces config: {}", e);
-            APIError::InternalServerError("Failed to load workspaces configuration".to_string())
-        })?;
+    let mut workspaces_config =
+        WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
+            .map_err(|e| {
+                error!("Failed to load workspaces config: {}", e);
+                APIError::InternalServerError("Failed to load workspaces configuration".to_string())
+            })?;
 
-    let existing_config = workspaces_config.get_workspace(&workspace_name)
+    let existing_config = workspaces_config
+        .get_workspace(&workspace_name)
         .ok_or_else(|| APIError::NotFound(format!("Workspace '{}' not found", workspace_name)))?
         .clone();
 
@@ -414,7 +481,10 @@ pub async fn update_workspace_tokens(
 
     Ok(Json(SetupWorkspaceResponse {
         success: true,
-        message: format!("Tokens updated for workspace '{}'. Restart the server to apply changes.", workspace_name),
+        message: format!(
+            "Tokens updated for workspace '{}'. Restart the server to apply changes.",
+            workspace_name
+        ),
     }))
 }
 
@@ -430,22 +500,31 @@ pub async fn update_emoji_mappings(
     Path(workspace_name): Path<String>,
     Json(payload): Json<UpdateEmojiMappingsRequest>,
 ) -> Result<Json<WorkspaceSettingsResponse>, APIError> {
-    info!("User {} updating emoji mappings for workspace: {}", person.email, workspace_name);
+    info!(
+        "User {} updating emoji mappings for workspace: {}",
+        person.email, workspace_name
+    );
 
     // Check if workspace exists
-    let workspaces_config = WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
-        .map_err(|e| {
-            error!("Failed to load workspaces config: {}", e);
-            APIError::InternalServerError("Failed to load workspaces configuration".to_string())
-        })?;
+    let workspaces_config =
+        WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
+            .map_err(|e| {
+                error!("Failed to load workspaces config: {}", e);
+                APIError::InternalServerError("Failed to load workspaces configuration".to_string())
+            })?;
 
     if workspaces_config.get_workspace(&workspace_name).is_none() {
-        return Err(APIError::NotFound(format!("Workspace '{}' not found", workspace_name)));
+        return Err(APIError::NotFound(format!(
+            "Workspace '{}' not found",
+            workspace_name
+        )));
     }
 
     // Update emoji mappings in database
     let settings_repo = WorkspaceSettingsRepo::new(state.database.clone());
-    let settings = settings_repo.update_emoji_mappings(&workspace_name, payload.emoji_mappings.clone()).await
+    let settings = settings_repo
+        .update_emoji_mappings(&workspace_name, payload.emoji_mappings.clone())
+        .await
         .map_err(|e| {
             error!("Failed to update emoji mappings: {}", e);
             APIError::InternalServerError("Failed to update emoji mappings".to_string())
@@ -467,12 +546,17 @@ pub async fn reset_emoji_mappings(
     person: Person,
     Path(workspace_name): Path<String>,
 ) -> Result<Json<WorkspaceSettingsResponse>, APIError> {
-    info!("User {} resetting emoji mappings for workspace: {}", person.email, workspace_name);
+    info!(
+        "User {} resetting emoji mappings for workspace: {}",
+        person.email, workspace_name
+    );
 
     let default_mappings = EmojiMappings::default_mappings();
 
     let settings_repo = WorkspaceSettingsRepo::new(state.database.clone());
-    let settings = settings_repo.update_emoji_mappings(&workspace_name, default_mappings).await
+    let settings = settings_repo
+        .update_emoji_mappings(&workspace_name, default_mappings)
+        .await
         .map_err(|e| {
             error!("Failed to reset emoji mappings: {}", e);
             APIError::InternalServerError("Failed to reset emoji mappings".to_string())
@@ -524,7 +608,7 @@ pub async fn get_workspace_users(
     let per_page = pagination.per_page.unwrap_or(10).min(100);
 
     let workspace_links_repo = WorkspaceLinksRepo::new(state.database.clone());
-    
+
     let (users_with_links, total) = workspace_links_repo
         .get_workspace_users_paginated(workspace_name.clone(), page, per_page)
         .await
@@ -576,14 +660,18 @@ pub async fn invite_user_to_workspace(
     Path(workspace_name): Path<String>,
     Json(payload): Json<InviteUserRequest>,
 ) -> Result<Json<InviteUserResponse>, APIError> {
-    info!("User {} inviting {} to workspace {}", person.email, payload.email, workspace_name);
+    info!(
+        "User {} inviting {} to workspace {}",
+        person.email, payload.email, workspace_name
+    );
 
     // Load workspace config to get bot token
-    let workspaces_config = WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
-        .map_err(|e| {
-            error!("Failed to load workspaces config: {}", e);
-            APIError::InternalServerError("Failed to load workspaces configuration".to_string())
-        })?;
+    let workspaces_config =
+        WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
+            .map_err(|e| {
+                error!("Failed to load workspaces config: {}", e);
+                APIError::InternalServerError("Failed to load workspaces configuration".to_string())
+            })?;
 
     let workspace_config = workspaces_config
         .get_workspace(&workspace_name)
@@ -594,7 +682,9 @@ pub async fn invite_user_to_workspace(
         &workspace_config.bot_token,
         &state.config.google_client_id,
         &payload.email,
-    ).await {
+    )
+    .await
+    {
         Ok(result) => result,
         Err(e) => {
             error!("User not found in Slack: {}", e);
@@ -617,15 +707,18 @@ pub async fn invite_user_to_workspace(
         Err(_) => {
             // Create new person
             info!("Creating new person for invited user: {}", payload.email);
-            persons_repo.create(
-                slack_name.clone(),
-                false, // is_me - false for invited users
-                slack_member_id.clone(),
-                payload.email.clone(),
-            ).await.map_err(|e| {
-                error!("Failed to create person: {}", e);
-                APIError::InternalServerError("Failed to create user".to_string())
-            })?
+            persons_repo
+                .create(
+                    slack_name.clone(),
+                    false, // is_me - false for invited users
+                    slack_member_id.clone(),
+                    payload.email.clone(),
+                )
+                .await
+                .map_err(|e| {
+                    error!("Failed to create person: {}", e);
+                    APIError::InternalServerError("Failed to create user".to_string())
+                })?
         }
     };
 
@@ -637,7 +730,10 @@ pub async fn invite_user_to_workspace(
         if existing_link.is_linked {
             return Ok(Json(InviteUserResponse {
                 success: false,
-                message: format!("User '{}' is already a member of this workspace", payload.email),
+                message: format!(
+                    "User '{}' is already a member of this workspace",
+                    payload.email
+                ),
                 user: Some(WorkspaceUserInfo {
                     id: person_model.id,
                     name: person_model.name,
@@ -652,14 +748,21 @@ pub async fn invite_user_to_workspace(
 
     // Create workspace link
     let link = workspace_links_repo
-        .link_workspace(person_model.id.clone(), workspace_name.clone(), slack_member_id.clone())
+        .link_workspace(
+            person_model.id.clone(),
+            workspace_name.clone(),
+            slack_member_id.clone(),
+        )
         .await
         .map_err(|e| {
             error!("Failed to link user to workspace: {}", e);
             APIError::InternalServerError("Failed to add user to workspace".to_string())
         })?;
 
-    info!("Successfully invited {} to workspace {}", payload.email, workspace_name);
+    info!(
+        "Successfully invited {} to workspace {}",
+        payload.email, workspace_name
+    );
 
     Ok(Json(InviteUserResponse {
         success: true,
@@ -687,10 +790,13 @@ pub async fn remove_user_from_workspace(
     Path(workspace_name): Path<String>,
     Json(payload): Json<RemoveUserRequest>,
 ) -> Result<Json<InviteUserResponse>, APIError> {
-    info!("User {} removing user {} from workspace {}", person.email, payload.user_id, workspace_name);
+    info!(
+        "User {} removing user {} from workspace {}",
+        person.email, payload.user_id, workspace_name
+    );
 
     let workspace_links_repo = WorkspaceLinksRepo::new(state.database.clone());
-    
+
     workspace_links_repo
         .unlink_workspace(payload.user_id.clone(), workspace_name.clone())
         .await

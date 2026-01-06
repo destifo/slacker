@@ -61,4 +61,3 @@ enum WorkspaceSettings {
     CreatedAt,
     UpdatedAt,
 }
-

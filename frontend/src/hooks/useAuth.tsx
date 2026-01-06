@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import {
   createContext,
   useContext,
@@ -90,13 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Verify token for active account
-  useEffect(() => {
-    if (token && person) {
-      verifyToken();
-    }
-  }, [token]);
-
-  const verifyToken = async () => {
+  const verifyToken = useCallback(async () => {
     try {
       const response = await axios.get<Person>("/api/auth/me");
       // Update person data in store
@@ -113,10 +108,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         saveStore(updated);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const axiosErr = error as {
+        response?: { status?: number };
+        message?: string;
+      };
       // Only remove account on explicit 401 Unauthorized
       // Don't remove on network errors or other issues
-      if (error?.response?.status === 401) {
+      if (axiosErr?.response?.status === 401) {
         console.warn("Token invalid (401), removing account");
         if (multiAccountStore.activeEmail) {
           removeAccount(multiAccountStore.activeEmail);
@@ -124,12 +123,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         console.warn(
           "Failed to verify token (non-auth error):",
-          error?.message || error
+          axiosErr?.message || error
         );
         // Keep the account - might be a temporary network issue
       }
     }
-  };
+  }, [multiAccountStore, saveStore, removeAccount]);
+
+  useEffect(() => {
+    if (token && person) {
+      verifyToken();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const login = useCallback(() => {
     // Redirect to Google OAuth
@@ -162,7 +168,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     if (!multiAccountStore.activeEmail) return;
 
-    const { [multiAccountStore.activeEmail]: removed, ...remainingAccounts } =
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { [multiAccountStore.activeEmail]: _, ...remainingAccounts } =
       multiAccountStore.accounts;
 
     const remainingEmails = Object.keys(remainingAccounts);
@@ -185,8 +192,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const removeAccount = useCallback(
     (email: string) => {
-      const { [email]: removed, ...remainingAccounts } =
-        multiAccountStore.accounts;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [email]: _, ...remainingAccounts } = multiAccountStore.accounts;
 
       const remainingEmails = Object.keys(remainingAccounts);
       const newActiveEmail =

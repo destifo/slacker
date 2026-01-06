@@ -61,8 +61,9 @@ export function ProjectsPage() {
     try {
       await axios.post("/api/workspaces/link", { workspace_name: workspaceName });
       await fetchWorkspaces();
-    } catch (err: any) {
-      const message = err.response?.data?.message || "Failed to link workspace";
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      const message = axiosErr.response?.data?.message || "Failed to link workspace";
       alert(message);
     } finally {
       setLinkingWorkspace(null);
@@ -71,12 +72,12 @@ export function ProjectsPage() {
 
   const handleUnlink = async (workspaceName: string) => {
     if (!window.confirm(`Unlink from workspace "${workspaceName}"?`)) return;
-    
+
     setLinkingWorkspace(workspaceName);
     try {
       await axios.post("/api/workspaces/unlink", { workspace_name: workspaceName });
       await fetchWorkspaces();
-    } catch (err) {
+    } catch {
       alert("Failed to unlink workspace");
     } finally {
       setLinkingWorkspace(null);
@@ -88,8 +89,9 @@ export function ProjectsPage() {
     try {
       await axios.post("/api/workspaces/switch", { workspace_name: workspaceName });
       await fetchWorkspaces();
-    } catch (err: any) {
-      const message = err.response?.data?.message || "Failed to switch workspace";
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      const message = axiosErr.response?.data?.message || "Failed to switch workspace";
       alert(message);
     } finally {
       setSwitchingWorkspace(null);
@@ -213,7 +215,7 @@ function WorkspaceCard({ workspace, isLinking, isSwitching, onLink, onUnlink, on
     const date = new Date(isoString);
     const now = new Date();
     const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
+
     if (seconds < 60) return 'just now';
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
@@ -724,4 +726,3 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "all 0.2s",
   },
 };
-

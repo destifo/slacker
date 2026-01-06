@@ -33,4 +33,3 @@ enum WorkspaceLinks {
     Table,
     IsActive,
 }
-

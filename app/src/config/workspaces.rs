@@ -56,12 +56,12 @@ impl WorkspacesConfig {
 
     pub fn load_from_file(path: &str) -> Result<Self> {
         let contents = fs::read_to_string(path)?;
-        
+
         // Handle empty file
         if contents.trim().is_empty() {
             return Ok(Self::new());
         }
-        
+
         let config: WorkspacesConfig = serde_yaml::from_str(&contents)?;
         Ok(config)
     }
@@ -72,15 +72,15 @@ impl WorkspacesConfig {
         if !std::path::Path::new(path).exists() {
             return Ok(Self::new());
         }
-        
+
         let mut config = Self::load_from_file(path)?;
-        
+
         let mut decrypted_workspaces = HashMap::new();
         for (name, workspace) in config.workspaces {
             decrypted_workspaces.insert(name, workspace.decrypt(encryption_key)?);
         }
         config.workspaces = decrypted_workspaces;
-        
+
         Ok(config)
     }
 
@@ -93,14 +93,13 @@ impl WorkspacesConfig {
     /// Encrypt and save workspace config
     pub fn save_encrypted(&self, path: &str, encryption_key: &str) -> Result<()> {
         let mut encrypted_config = Self::new();
-        
+
         for (name, workspace) in &self.workspaces {
-            encrypted_config.workspaces.insert(
-                name.clone(),
-                workspace.encrypt(encryption_key)?,
-            );
+            encrypted_config
+                .workspaces
+                .insert(name.clone(), workspace.encrypt(encryption_key)?);
         }
-        
+
         encrypted_config.save_to_file(path)
     }
 

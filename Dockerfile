@@ -65,4 +65,3 @@ EXPOSE 3000
 
 # Run the binary
 CMD ["/app/slacker"]
-

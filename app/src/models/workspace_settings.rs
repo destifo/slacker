@@ -53,4 +53,3 @@ impl Model {
             .unwrap_or_else(|_| EmojiMappings::default_mappings())
     }
 }
-

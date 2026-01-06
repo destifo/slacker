@@ -27,4 +27,3 @@
 - Refactored `SlackBot` to support multiple workspaces with per-workspace tokens
 - Moved token configuration from environment variables to encrypted YAML file
 - Task filtering now based on user's active workspace
-

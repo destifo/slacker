@@ -276,7 +276,7 @@ styleSheet.textContent = `
       transform: translate(-5%, 5%) scale(1.02);
     }
   }
-  
+
   @keyframes slideUp {
     from {
       opacity: 0;
@@ -287,7 +287,7 @@ styleSheet.textContent = `
       transform: translateY(0);
     }
   }
-  
+
   @keyframes scaleIn {
     from {
       opacity: 0;
@@ -298,7 +298,7 @@ styleSheet.textContent = `
       transform: scale(1);
     }
   }
-  
+
   @keyframes fadeIn {
     from {
       opacity: 0;
@@ -307,17 +307,16 @@ styleSheet.textContent = `
       opacity: 1;
     }
   }
-  
+
   button:hover:not(:disabled) {
     background: var(--hover-bg) !important;
     border-color: var(--card-hover-border) !important;
     transform: translateY(-1px);
     box-shadow: 0 8px 25px var(--shadow-color);
   }
-  
+
   button:active:not(:disabled) {
     transform: translateY(0);
   }
 `;
 document.head.appendChild(styleSheet);
-

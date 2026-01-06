@@ -1,11 +1,13 @@
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, QueryOrder, PaginatorTrait,
+    PaginatorTrait, QueryFilter, QueryOrder,
 };
 
 use crate::{
-    models::workspace_link::{self, ActiveModel, Entity as WorkspaceLinkEntity, Model as WorkspaceLink},
     models::person::{Entity as PersonEntity, Model as Person},
+    models::workspace_link::{
+        self, ActiveModel, Entity as WorkspaceLinkEntity, Model as WorkspaceLink,
+    },
     utils::crypto::generate_uuid,
 };
 
@@ -189,7 +191,10 @@ impl WorkspaceLinksRepo {
     }
 
     /// Get all links for a workspace (used to find all users in a workspace)
-    pub async fn get_by_workspace(&self, workspace_name: String) -> Result<Vec<WorkspaceLink>, DbErr> {
+    pub async fn get_by_workspace(
+        &self,
+        workspace_name: String,
+    ) -> Result<Vec<WorkspaceLink>, DbErr> {
         let links = WorkspaceLinkEntity::find()
             .filter(workspace_link::Column::WorkspaceName.eq(&workspace_name))
             .filter(workspace_link::Column::IsLinked.eq(true))
@@ -226,7 +231,10 @@ impl WorkspaceLinksRepo {
         // Fetch persons for each link
         let mut results: Vec<(WorkspaceLink, Person)> = Vec::new();
         for link in links {
-            if let Ok(Some(person)) = PersonEntity::find_by_id(&link.person_id).one(&self.db).await {
+            if let Ok(Some(person)) = PersonEntity::find_by_id(&link.person_id)
+                .one(&self.db)
+                .await
+            {
                 results.push((link, person));
             }
         }
@@ -234,4 +242,3 @@ impl WorkspaceLinksRepo {
         Ok((results, total))
     }
 }
-

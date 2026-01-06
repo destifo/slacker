@@ -80,9 +80,7 @@ impl PersonsRepo {
     }
 
     pub async fn get_by_id(&self, id: String) -> Result<Person, DbErr> {
-        let person = PersonEntity::find_by_id(&id)
-            .one(&self.db)
-            .await?;
+        let person = PersonEntity::find_by_id(&id).one(&self.db).await?;
 
         match person {
             Some(p) => Ok(p),
@@ -94,9 +92,13 @@ impl PersonsRepo {
     }
 
     /// Update a person's external_id (Slack member ID)
-    pub async fn update_external_id(&self, person_id: String, external_id: String) -> Result<Person, DbErr> {
+    pub async fn update_external_id(
+        &self,
+        person_id: String,
+        external_id: String,
+    ) -> Result<Person, DbErr> {
         use crate::models::person::ActiveModel;
-        
+
         let person = self.get_by_id(person_id).await?;
         let mut person_active: ActiveModel = person.into();
         person_active.external_id = Set(external_id);

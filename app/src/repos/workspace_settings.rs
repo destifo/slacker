@@ -4,7 +4,8 @@ use sea_orm::{
 use serde_json::json;
 
 use crate::models::workspace_settings::{
-    ActiveModel, Column, EmojiMappings, Entity as WorkspaceSettingsEntity, Model as WorkspaceSettings,
+    ActiveModel, Column, EmojiMappings, Entity as WorkspaceSettingsEntity,
+    Model as WorkspaceSettings,
 };
 
 pub struct WorkspaceSettingsRepo {
@@ -16,7 +17,10 @@ impl WorkspaceSettingsRepo {
         Self { db }
     }
 
-    pub async fn get_by_workspace(&self, workspace_name: &str) -> Result<Option<WorkspaceSettings>, DbErr> {
+    pub async fn get_by_workspace(
+        &self,
+        workspace_name: &str,
+    ) -> Result<Option<WorkspaceSettings>, DbErr> {
         WorkspaceSettingsEntity::find()
             .filter(Column::WorkspaceName.eq(workspace_name))
             .one(&self.db)
@@ -68,4 +72,3 @@ impl WorkspaceSettingsRepo {
         Ok(settings.get_emoji_mappings())
     }
 }
-

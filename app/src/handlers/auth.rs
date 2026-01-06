@@ -37,7 +37,7 @@ struct GoogleUserInfo {
 
 pub async fn google_login(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope=openid%20email%20profile", 
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope=openid%20email%20profile",
         state.config.google_client_id,
         urlencoding::encode(&state.config.google_redirect_uri)
     );

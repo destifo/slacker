@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { X, ExternalLink, Clock, ArrowRight, Loader2, AlertCircle, CheckCircle2, Ban } from 'lucide-react';
 
@@ -46,13 +46,7 @@ export function TaskModal({ taskId, isOpen, onClose }: TaskModalProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isOpen && taskId) {
-      fetchTaskDetail();
-    }
-  }, [isOpen, taskId]);
-
-  const fetchTaskDetail = async () => {
+  const fetchTaskDetail = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -64,7 +58,13 @@ export function TaskModal({ taskId, isOpen, onClose }: TaskModalProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [taskId]);
+
+  useEffect(() => {
+    if (isOpen && taskId) {
+      fetchTaskDetail();
+    }
+  }, [isOpen, taskId, fetchTaskDetail]);
 
   if (!isOpen) return null;
 
@@ -395,7 +395,7 @@ styleSheet.textContent = `
     from { opacity: 0; }
     to { opacity: 1; }
   }
-  
+
   @keyframes slideUp {
     from {
       opacity: 0;
@@ -408,4 +408,3 @@ styleSheet.textContent = `
   }
 `;
 document.head.appendChild(styleSheet);
-

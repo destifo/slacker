@@ -53,5 +53,5 @@ The built files will be in the `dist/` directory, ready to be served by the Axum
 ## Task Status Mapping
 
 - 👀 `:eyes:` emoji → In Progress
-- ⏳ `:hourglass:` / `:loading:` emoji → Blocked  
+- ⏳ `:hourglass:` / `:loading:` emoji → Blocked
 - ✅ `:white_check_mark:` emoji → Completed

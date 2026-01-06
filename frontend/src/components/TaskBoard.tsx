@@ -60,19 +60,19 @@ export function TaskBoard() {
 
   const checkWorkspaces = useCallback(async () => {
     try {
-      const response = await axios.get<{ workspaces: any[] }>('/api/workspaces');
+      const response = await axios.get<{ workspaces: { is_active: boolean; is_syncing: boolean; sync_progress: string | null }[] }>('/api/workspaces');
       const workspaces = response.data.workspaces;
       setHasWorkspaces(workspaces && workspaces.length > 0);
-      
+
       // Check if active workspace is syncing
-      const activeWs = workspaces?.find((w: any) => w.is_active);
+      const activeWs = workspaces?.find((w) => w.is_active);
       if (activeWs) {
         setSyncStatus({
           is_syncing: activeWs.is_syncing,
           sync_progress: activeWs.sync_progress,
         });
       }
-      
+
       if (!workspaces || workspaces.length === 0) {
         setLoading(false);
       }
@@ -98,9 +98,9 @@ export function TaskBoard() {
   // Only poll when syncing is active (3 second interval) AND tab is visible
   useEffect(() => {
     if (!syncStatus?.is_syncing) return;
-    
+
     let interval: ReturnType<typeof setInterval> | null = null;
-    
+
     const startPolling = () => {
       if (document.visibilityState === 'visible') {
         interval = setInterval(() => {
@@ -109,14 +109,14 @@ export function TaskBoard() {
         }, 3000);
       }
     };
-    
+
     const stopPolling = () => {
       if (interval) {
         clearInterval(interval);
         interval = null;
       }
     };
-    
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         // Immediate fetch when tab becomes visible
@@ -127,10 +127,10 @@ export function TaskBoard() {
         stopPolling();
       }
     };
-    
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     startPolling();
-    
+
     return () => {
       stopPolling();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -191,11 +191,11 @@ export function TaskBoard() {
             <br />
             Get started by connecting your first workspace.
           </p>
-          <button 
+          <button
             onClick={() => {
               window.history.pushState({}, '', '/setup');
               window.dispatchEvent(new PopStateEvent('popstate'));
-            }} 
+            }}
             style={styles.setupButton}
           >
             <Plus size={20} />
@@ -268,7 +268,7 @@ export function TaskBoard() {
           <UserMenu />
         </div>
       </header>
-      
+
       {/* Syncing Banner */}
       {syncStatus?.is_syncing && (
         <div style={styles.syncingBanner}>
@@ -278,7 +278,7 @@ export function TaskBoard() {
           </span>
         </div>
       )}
-      
+
       <div style={styles.boardContainer}>
         <TaskColumn
           title="In Progress"
@@ -791,7 +791,7 @@ styleSheet.textContent = `
       transform: rotate(360deg);
     }
   }
-  
+
   @keyframes pulse {
     0%, 100% {
       opacity: 1;
@@ -802,24 +802,23 @@ styleSheet.textContent = `
       transform: scale(1.1);
     }
   }
-  
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
   }
-  
+
   ::-webkit-scrollbar-track {
     background: rgba(255, 255, 255, 0.02);
   }
-  
+
   ::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.1);
     border-radius: 4px;
   }
-  
+
   ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.15);
   }
 `;
 document.head.appendChild(styleSheet);
-

@@ -61,4 +61,3 @@ enum Persons {
     Table,
     Id,
 }
-

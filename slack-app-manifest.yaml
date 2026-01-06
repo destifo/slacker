@@ -1,5 +1,5 @@
 # Slack App Manifest for Slacker Task Manager
-# 
+#
 # HOW TO USE:
 # 1. Go to https://api.slack.com/apps
 # 2. Click "Create New App" → "From an app manifest"
@@ -49,4 +49,3 @@ settings:
   org_deploy_enabled: false
   socket_mode_enabled: true
   token_rotation_enabled: false
-

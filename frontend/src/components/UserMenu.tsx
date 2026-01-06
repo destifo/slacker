@@ -404,7 +404,7 @@ styleSheet.textContent = `
       transform: translateY(0) scale(1);
     }
   }
-  
+
   @keyframes pulse {
     0%, 100% {
       opacity: 1;
@@ -413,10 +413,9 @@ styleSheet.textContent = `
       opacity: 0.5;
     }
   }
-  
+
   button:hover:not(:disabled) .logout-hover {
     background: rgba(239, 68, 68, 0.1) !important;
   }
 `;
 document.head.appendChild(styleSheet);
-

@@ -1,7 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::RwLock;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BotStatus {
@@ -115,4 +115,3 @@ impl BotStatusManager {
             .unwrap_or(false)
     }
 }
-

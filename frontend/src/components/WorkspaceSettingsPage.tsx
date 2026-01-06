@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import {
   Loader2,
@@ -98,17 +98,7 @@ export function WorkspaceSettingsPage({ workspaceName }: WorkspaceSettingsPagePr
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchSettings();
-  }, [workspaceName]);
-
-  useEffect(() => {
-    if (activeTab === "users") {
-      fetchUsers();
-    }
-  }, [activeTab, usersPagination.page]);
-
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       setLoading(true);
       const response = await axios.get<WorkspaceSettings>(
@@ -117,14 +107,15 @@ export function WorkspaceSettingsPage({ workspaceName }: WorkspaceSettingsPagePr
       setSettings(response.data);
       setEmojiMappings(response.data.emoji_mappings);
       setError(null);
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to load settings");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(axiosErr.response?.data?.message || "Failed to load settings");
     } finally {
       setLoading(false);
     }
-  };
+  }, [workspaceName]);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       setUsersLoading(true);
       const response = await axios.get<UsersResponse>(
@@ -132,17 +123,28 @@ export function WorkspaceSettingsPage({ workspaceName }: WorkspaceSettingsPagePr
         { params: { page: usersPagination.page, per_page: usersPagination.per_page } }
       );
       setUsers(response.data.users);
-      setUsersPagination({
-        ...usersPagination,
+      setUsersPagination((prev) => ({
+        ...prev,
         total: response.data.total,
         total_pages: response.data.total_pages,
-      });
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to load users");
+      }));
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(axiosErr.response?.data?.message || "Failed to load users");
     } finally {
       setUsersLoading(false);
     }
-  };
+  }, [workspaceName, usersPagination.page, usersPagination.per_page]);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
+  useEffect(() => {
+    if (activeTab === "users") {
+      fetchUsers();
+    }
+  }, [activeTab, fetchUsers]);
 
   const handleUpdateTokens = async () => {
     if (!appToken && !botToken) {
@@ -164,8 +166,9 @@ export function WorkspaceSettingsPage({ workspaceName }: WorkspaceSettingsPagePr
       setAppToken("");
       setBotToken("");
       await fetchSettings();
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to update tokens");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(axiosErr.response?.data?.message || "Failed to update tokens");
     } finally {
       setSaving(false);
     }
@@ -182,8 +185,9 @@ export function WorkspaceSettingsPage({ workspaceName }: WorkspaceSettingsPagePr
       });
       setSuccess("Emoji mappings updated successfully!");
       await fetchSettings();
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to update emoji mappings");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(axiosErr.response?.data?.message || "Failed to update emoji mappings");
     } finally {
       setSaving(false);
     }
@@ -201,8 +205,9 @@ export function WorkspaceSettingsPage({ workspaceName }: WorkspaceSettingsPagePr
       );
       setEmojiMappings(response.data.emoji_mappings);
       setSuccess("Emoji mappings reset to defaults!");
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to reset mappings");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(axiosErr.response?.data?.message || "Failed to reset mappings");
     } finally {
       setSaving(false);
     }
@@ -257,8 +262,9 @@ export function WorkspaceSettingsPage({ workspaceName }: WorkspaceSettingsPagePr
       } else {
         setInviteError(response.data.message);
       }
-    } catch (err: any) {
-      setInviteError(err.response?.data?.message || "Failed to invite user");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setInviteError(axiosErr.response?.data?.message || "Failed to invite user");
     } finally {
       setInviting(false);
     }
@@ -273,8 +279,9 @@ export function WorkspaceSettingsPage({ workspaceName }: WorkspaceSettingsPagePr
       });
       setSuccess(`${userName} has been removed from the workspace`);
       fetchUsers();
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to remove user");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(axiosErr.response?.data?.message || "Failed to remove user");
     }
   };
 
@@ -703,7 +710,7 @@ export function WorkspaceSettingsPage({ workspaceName }: WorkspaceSettingsPagePr
                 <X size={20} />
               </button>
             </div>
-            
+
             <div style={styles.modalBody}>
               <p style={styles.modalDescription}>
                 Enter the email address of the person you want to invite. They must be a member of the Slack workspace.

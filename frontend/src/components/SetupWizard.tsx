@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import axios from 'axios';
-import { 
-  ChevronRight, 
-  ChevronLeft, 
-  Check, 
-  Copy, 
-  ExternalLink, 
+import {
+  ChevronRight,
+  ChevronLeft,
+  Check,
+  Copy,
+  ExternalLink,
   Loader2,
   AlertCircle,
   CheckCircle2,
@@ -36,7 +36,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
+    } catch {
       // Fallback: open in new tab
       window.open(MANIFEST_URL, '_blank');
     }
@@ -72,8 +72,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         bot_token: botToken.trim(),
       });
       setStep(5); // Success step
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save workspace configuration');
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(axiosErr.response?.data?.message || 'Failed to save workspace configuration');
     } finally {
       setSaving(false);
     }
@@ -89,10 +90,10 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             </div>
             <h2 style={styles.stepTitle}>Create Your Slack App</h2>
             <p style={styles.stepDescription}>
-              First, we'll create a Slack app using a pre-configured manifest. 
+              First, we'll create a Slack app using a pre-configured manifest.
               This sets up all the permissions automatically.
             </p>
-            
+
             <div style={styles.instructions}>
               <div style={styles.instructionItem}>
                 <span style={styles.instructionNumber}>1</span>
@@ -129,7 +130,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             <p style={styles.stepDescription}>
               The app token enables real-time communication with Slack via Socket Mode.
             </p>
-            
+
             <div style={styles.instructions}>
               <div style={styles.instructionItem}>
                 <span style={styles.instructionNumber}>1</span>
@@ -174,7 +175,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             <p style={styles.stepDescription}>
               The bot token allows the app to read messages and reactions.
             </p>
-            
+
             <div style={styles.instructions}>
               <div style={styles.instructionItem}>
                 <span style={styles.instructionNumber}>1</span>
@@ -261,7 +262,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             </div>
             <h2 style={styles.stepTitle}>Setup Complete!</h2>
             <p style={styles.stepDescription}>
-              Your Slack workspace has been configured successfully. 
+              Your Slack workspace has been configured successfully.
               The bot will start listening for reactions.
             </p>
 
@@ -328,7 +329,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 <span>Back</span>
               </button>
             )}
-            
+
             <div style={styles.navSpacer} />
 
             {step < totalSteps && (
@@ -339,8 +340,8 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             )}
 
             {step === totalSteps && (
-              <button 
-                onClick={handleSave} 
+              <button
+                onClick={handleSave}
                 disabled={saving}
                 style={{
                   ...styles.nextButton,
@@ -659,4 +660,3 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 4px 12px var(--glow-blue)',
   },
 };
-

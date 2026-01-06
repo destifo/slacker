@@ -54,4 +54,3 @@ pub async fn run_migrations(connection: &DatabaseConnection) -> Result<(), Datab
 
     Ok(())
 }
-

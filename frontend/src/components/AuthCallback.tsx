@@ -17,15 +17,19 @@ export function AuthCallback() {
 
     if (token && name && email) {
       handleAuthCallback(token, decodeURIComponent(name), decodeURIComponent(email));
-      setStatus("success");
-      
-      // Redirect to home after short delay
+      // Use setTimeout to avoid calling setState synchronously in effect
       setTimeout(() => {
-        window.location.href = "/";
-      }, 1500);
+        setStatus("success");
+        // Redirect to home after short delay
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 1500);
+      }, 0);
     } else {
-      setStatus("error");
-      setError("Missing authentication data. Please try again.");
+      setTimeout(() => {
+        setStatus("error");
+        setError("Missing authentication data. Please try again.");
+      }, 0);
     }
   }, [handleAuthCallback]);
 
@@ -167,7 +171,7 @@ styleSheet.textContent = `
       width: 100%;
     }
   }
-  
+
   @keyframes shake {
     0%, 100% { transform: translateX(0); }
     10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
@@ -175,4 +179,3 @@ styleSheet.textContent = `
   }
 `;
 document.head.appendChild(styleSheet);
-
