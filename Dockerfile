@@ -51,9 +51,11 @@ COPY --from=backend-builder /app/target/release/slacker /app/slacker
 # Copy frontend build
 COPY --from=frontend-builder /app/frontend/dist /app/static
 
-# Copy default files (workspaces.yaml will be mounted or created at runtime)
-COPY workspaces.example.yaml /app/workspaces.example.yaml
+# Copy static files
 COPY slack-app-manifest.yaml /app/static/slack-app-manifest.yaml
+
+# Create empty workspaces.yaml (will be mounted or configured at runtime)
+RUN touch /app/workspaces.yaml
 
 # Set environment variables
 ENV STATIC_DIR=/app/static
