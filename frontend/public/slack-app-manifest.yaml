@@ -1,0 +1,52 @@
+# Slack App Manifest for Slacker Task Manager
+# 
+# HOW TO USE:
+# 1. Go to https://api.slack.com/apps
+# 2. Click "Create New App" → "From an app manifest"
+# 3. Select your workspace
+# 4. Paste this entire file content
+# 5. Click "Create"
+# 6. After creation, go to "Basic Information" → "App-Level Tokens"
+#    - Click "Generate Token and Scopes"
+#    - Add scope: connections:write
+#    - Name it anything (e.g., "socket-mode")
+#    - Copy the token (starts with xapp-)
+# 7. Go to "OAuth & Permissions" → Copy "Bot User OAuth Token" (starts with xoxb-)
+# 8. Install app to workspace if not already installed
+
+display_information:
+  name: Slacker Task Manager
+  description: Track tasks from Slack reactions
+  background_color: "#1a1a2e"
+
+features:
+  bot_user:
+    display_name: Slacker Bot
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      - channels:history
+      - channels:read
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - mpim:history
+      - mpim:read
+      - reactions:read
+      - users:read
+      - users:read.email
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - reaction_added
+      - reaction_removed
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
+

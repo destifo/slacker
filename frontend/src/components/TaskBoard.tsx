@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Clock, AlertCircle, CheckCircle2, Loader2, Zap } from 'lucide-react';
+import { Clock, AlertCircle, CheckCircle2, Loader2, Zap, Slack, Plus, Sparkles, RefreshCw } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -27,29 +27,24 @@ interface TaskBoard {
   completed: Task[];
 }
 
+interface WorkspaceStatus {
+  is_syncing: boolean;
+  sync_progress: string | null;
+}
+
 export function TaskBoard() {
   const [board, setBoard] = useState<TaskBoard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
+  const [hasWorkspaces, setHasWorkspaces] = useState<boolean | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<WorkspaceStatus | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { activeEmail } = useAuth();
 
-  useEffect(() => {
-    fetchTasks();
-    // Poll for updates every 5 seconds
-    const interval = setInterval(fetchTasks, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Refetch when account switches or workspace changes
-  useEffect(() => {
-    if (activeEmail) {
-      fetchTasks();
-    }
-  }, [activeEmail, activeWorkspace]);
-
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async (showRefreshIndicator = false) => {
+    if (showRefreshIndicator) setIsRefreshing(true);
     try {
       const response = await axios.get<TaskBoard>('/api/tasks/board');
       setBoard(response.data);
@@ -59,8 +54,99 @@ export function TaskBoard() {
       setError('Failed to fetch tasks. Make sure the backend is running.');
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
-  };
+  }, []);
+
+  const checkWorkspaces = useCallback(async () => {
+    try {
+      const response = await axios.get<{ workspaces: any[] }>('/api/workspaces');
+      const workspaces = response.data.workspaces;
+      setHasWorkspaces(workspaces && workspaces.length > 0);
+      
+      // Check if active workspace is syncing
+      const activeWs = workspaces?.find((w: any) => w.is_active);
+      if (activeWs) {
+        setSyncStatus({
+          is_syncing: activeWs.is_syncing,
+          sync_progress: activeWs.sync_progress,
+        });
+      }
+      
+      if (!workspaces || workspaces.length === 0) {
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error('Failed to check workspaces:', err);
+      setHasWorkspaces(false);
+      setLoading(false);
+    }
+  }, []);
+
+  // Initial load
+  useEffect(() => {
+    checkWorkspaces();
+  }, [checkWorkspaces]);
+
+  // Fetch tasks once when workspaces are available
+  useEffect(() => {
+    if (hasWorkspaces === true) {
+      fetchTasks();
+    }
+  }, [hasWorkspaces, fetchTasks]);
+
+  // Only poll when syncing is active (3 second interval) AND tab is visible
+  useEffect(() => {
+    if (!syncStatus?.is_syncing) return;
+    
+    let interval: ReturnType<typeof setInterval> | null = null;
+    
+    const startPolling = () => {
+      if (document.visibilityState === 'visible') {
+        interval = setInterval(() => {
+          checkWorkspaces();
+          fetchTasks();
+        }, 3000);
+      }
+    };
+    
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Immediate fetch when tab becomes visible
+        checkWorkspaces();
+        fetchTasks();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    startPolling();
+    
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [syncStatus?.is_syncing, checkWorkspaces, fetchTasks]);
+
+  // Refetch when account switches or workspace changes
+  useEffect(() => {
+    if (activeEmail) {
+      fetchTasks();
+    }
+  }, [activeEmail, activeWorkspace, fetchTasks]);
+
+  const handleRefresh = useCallback(() => {
+    fetchTasks(true);
+  }, [fetchTasks]);
 
   if (loading) {
     return (
@@ -80,10 +166,49 @@ export function TaskBoard() {
           <AlertCircle size={48} />
         </div>
         <p style={styles.errorText}>{error}</p>
-        <button onClick={fetchTasks} style={styles.retryButton}>
+        <button onClick={() => fetchTasks()} style={styles.retryButton}>
           <Zap size={16} />
           <span>Retry Connection</span>
         </button>
+      </div>
+    );
+  }
+
+  // Show welcome screen when no workspaces are configured
+  if (hasWorkspaces === false) {
+    return (
+      <div style={styles.welcomeContainer}>
+        <div style={styles.welcomeContent}>
+          <div style={styles.welcomeIconWrapper}>
+            <Slack size={64} style={styles.welcomeIcon} />
+            <div style={styles.sparkleWrapper}>
+              <Sparkles size={24} style={styles.sparkleIcon} />
+            </div>
+          </div>
+          <h1 style={styles.welcomeTitle}>Welcome to Slacker</h1>
+          <p style={styles.welcomeSubtitle}>
+            Turn your Slack reactions into a beautiful task board.
+            <br />
+            Get started by connecting your first workspace.
+          </p>
+          <button 
+            onClick={() => {
+              window.history.pushState({}, '', '/setup');
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }} 
+            style={styles.setupButton}
+          >
+            <Plus size={20} />
+            <span>Configure Your First Workspace</span>
+          </button>
+          <p style={styles.welcomeHint}>
+            You'll need your Slack app tokens to get started
+          </p>
+        </div>
+        <div style={styles.welcomeHeader}>
+          <ThemeToggle />
+          <UserMenu />
+        </div>
       </div>
     );
   }
@@ -131,10 +256,29 @@ export function TaskBoard() {
         </div>
         <div style={styles.headerActions}>
           <WorkspaceSwitcher onWorkspaceChange={handleWorkspaceChange} />
+          <button
+            onClick={() => handleRefresh()}
+            disabled={isRefreshing}
+            style={styles.refreshButton}
+            title="Refresh tasks"
+          >
+            <RefreshCw size={18} style={isRefreshing ? styles.spinning : undefined} />
+          </button>
           <ThemeToggle />
           <UserMenu />
         </div>
       </header>
+      
+      {/* Syncing Banner */}
+      {syncStatus?.is_syncing && (
+        <div style={styles.syncingBanner}>
+          <Loader2 size={18} style={styles.syncSpinner} />
+          <span style={styles.syncingText}>
+            Loading your data... {syncStatus.sync_progress || ''}
+          </span>
+        </div>
+      )}
+      
       <div style={styles.boardContainer}>
         <TaskColumn
           title="In Progress"
@@ -285,6 +429,25 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'flex-start',
     gap: '2rem',
   },
+  syncingBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.75rem',
+    padding: '0.75rem 1.5rem',
+    background: 'linear-gradient(90deg, rgba(129, 140, 248, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+    borderBottom: '1px solid rgba(129, 140, 248, 0.2)',
+    flexShrink: 0,
+  },
+  syncSpinner: {
+    animation: 'spin 1s linear infinite',
+    color: '#818cf8',
+  },
+  syncingText: {
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    color: '#818cf8',
+  },
   headerContent: {
     flex: 1,
     textAlign: 'left',
@@ -293,6 +456,22 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '0.75rem',
+  },
+  refreshButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '40px',
+    height: '40px',
+    background: 'var(--button-bg)',
+    border: '1px solid var(--card-border)',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    color: 'var(--text-secondary)',
+    transition: 'all 0.2s',
+  },
+  spinning: {
+    animation: 'spin 1s linear infinite',
   },
   workspaceTitle: {
     fontSize: '2rem',
@@ -520,6 +699,85 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all 0.2s',
     boxShadow: '0 4px 12px var(--glow-blue)',
   },
+  welcomeContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: '100vh',
+    background: 'linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%)',
+    position: 'relative' as const,
+  },
+  welcomeHeader: {
+    position: 'absolute' as const,
+    top: '1.5rem',
+    right: '1.5rem',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+  },
+  welcomeContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center' as const,
+    padding: '2rem',
+    maxWidth: '500px',
+  },
+  welcomeIconWrapper: {
+    position: 'relative' as const,
+    marginBottom: '2rem',
+  },
+  welcomeIcon: {
+    color: 'var(--accent-color)',
+    filter: 'drop-shadow(0 0 20px var(--glow-blue))',
+  },
+  sparkleWrapper: {
+    position: 'absolute' as const,
+    top: '-8px',
+    right: '-12px',
+  },
+  sparkleIcon: {
+    color: '#fbbf24',
+    filter: 'drop-shadow(0 0 8px rgba(251, 191, 36, 0.6))',
+    animation: 'pulse 2s ease-in-out infinite',
+  },
+  welcomeTitle: {
+    fontSize: '2.5rem',
+    fontWeight: '700',
+    color: 'var(--text-primary)',
+    marginBottom: '1rem',
+    background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--accent-color) 100%)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    backgroundClip: 'text',
+  },
+  welcomeSubtitle: {
+    fontSize: '1.125rem',
+    color: 'var(--text-secondary)',
+    lineHeight: '1.8',
+    marginBottom: '2.5rem',
+  },
+  setupButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    background: 'var(--gradient-blue)',
+    color: '#ffffff',
+    padding: '1rem 2rem',
+    borderRadius: '0.75rem',
+    border: 'none',
+    fontSize: '1rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    boxShadow: '0 8px 32px var(--glow-blue)',
+  },
+  welcomeHint: {
+    marginTop: '1.5rem',
+    fontSize: '0.875rem',
+    color: 'var(--text-tertiary)',
+  },
 };
 
 // Add CSS animations
@@ -531,6 +789,17 @@ styleSheet.textContent = `
     }
     to {
       transform: rotate(360deg);
+    }
+  }
+  
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.1);
     }
   }
   

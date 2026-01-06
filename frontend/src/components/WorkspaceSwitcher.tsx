@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Check, ChevronDown, FolderKanban, Link, Unlink, Settings } from "lucide-react";
+import { Check, ChevronDown, FolderKanban, Link, Unlink, Settings, Plus } from "lucide-react";
 import axios from "axios";
 
 interface Workspace {
@@ -7,6 +7,10 @@ interface Workspace {
   is_linked: boolean;
   is_active: boolean;
   slack_member_id: string | null;
+  is_bot_connected: boolean;
+  bot_connected_at: string | null;
+  bot_last_heartbeat: string | null;
+  bot_error: string | null;
 }
 
 interface WorkspacesResponse {
@@ -89,6 +93,12 @@ export function WorkspaceSwitcher({ onWorkspaceChange }: WorkspaceSwitcherProps)
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
 
+  const goToSetup = () => {
+    setIsOpen(false);
+    window.history.pushState({}, "", "/setup");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
   const activeWorkspace = workspaces.find((w) => w.is_active);
   const linkedWorkspaces = workspaces.filter((w) => w.is_linked);
   const unlinkedWorkspaces = workspaces.filter((w) => !w.is_linked);
@@ -115,6 +125,12 @@ export function WorkspaceSwitcher({ onWorkspaceChange }: WorkspaceSwitcherProps)
         <span style={styles.workspaceName}>
           {activeWorkspace?.name || "No workspace"}
         </span>
+        {activeWorkspace && (
+          <span 
+            style={activeWorkspace.is_bot_connected ? styles.triggerStatusOnline : styles.triggerStatusOffline} 
+            title={activeWorkspace.is_bot_connected ? "Bot connected" : "Bot offline"}
+          />
+        )}
         <ChevronDown
           size={16}
           style={{
@@ -150,11 +166,17 @@ export function WorkspaceSwitcher({ onWorkspaceChange }: WorkspaceSwitcherProps)
                       ...(isSwitching ? styles.workspaceItemDisabled : {}),
                     }}
                   >
-                    <div style={styles.workspaceIcon}>
+                    <div style={{
+                      ...styles.workspaceIcon,
+                      ...(workspace.is_bot_connected ? {} : styles.workspaceIconOffline),
+                    }}>
                       <FolderKanban size={16} />
                     </div>
                     <div style={styles.workspaceInfo}>
-                      <span style={styles.workspaceItemName}>{workspace.name}</span>
+                      <div style={styles.workspaceNameRow}>
+                        <span style={styles.workspaceItemName}>{workspace.name}</span>
+                        <span style={workspace.is_bot_connected ? styles.statusDotOnline : styles.statusDotOffline} title={workspace.is_bot_connected ? "Bot connected" : "Bot offline"} />
+                      </div>
                       {isActive && (
                         <span style={styles.activeLabel}>Active</span>
                       )}
@@ -186,7 +208,10 @@ export function WorkspaceSwitcher({ onWorkspaceChange }: WorkspaceSwitcherProps)
                       <Unlink size={16} />
                     </div>
                     <div style={styles.workspaceInfo}>
-                      <span style={styles.workspaceItemName}>{workspace.name}</span>
+                      <div style={styles.workspaceNameRow}>
+                        <span style={styles.workspaceItemName}>{workspace.name}</span>
+                        <span style={workspace.is_bot_connected ? styles.statusDotOnline : styles.statusDotOffline} title={workspace.is_bot_connected ? "Bot connected" : "Bot offline"} />
+                      </div>
                       <span style={styles.unlinkedLabel}>Click to link</span>
                     </div>
                     <Link size={14} style={styles.linkIcon} />
@@ -199,15 +224,25 @@ export function WorkspaceSwitcher({ onWorkspaceChange }: WorkspaceSwitcherProps)
           {workspaces.length === 0 && (
             <div style={styles.emptyState}>
               <p>No workspaces configured</p>
+              <button onClick={goToSetup} style={styles.addNewButtonSmall}>
+                <Plus size={14} />
+                <span>Add Workspace</span>
+              </button>
             </div>
           )}
 
           <div style={styles.divider} />
 
-          <button onClick={goToProjects} style={styles.manageButton}>
-            <Settings size={16} />
-            <span>Manage Workspaces</span>
-          </button>
+          <div style={styles.footerButtons}>
+            <button onClick={goToSetup} style={styles.addNewButton}>
+              <Plus size={16} />
+              <span>Add New</span>
+            </button>
+            <button onClick={goToProjects} style={styles.manageButton}>
+              <Settings size={16} />
+              <span>Manage</span>
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -256,6 +291,22 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+  },
+  triggerStatusOnline: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    background: "#34d399",
+    boxShadow: "0 0 6px #34d399",
+    flexShrink: 0,
+  },
+  triggerStatusOffline: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    background: "#ef4444",
+    animation: "pulse 2s infinite",
+    flexShrink: 0,
   },
   chevron: {
     color: "var(--text-tertiary)",
@@ -352,12 +403,21 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-tertiary)",
     flexShrink: 0,
   },
+  workspaceIconOffline: {
+    background: "var(--button-bg)",
+    border: "1px solid var(--card-border)",
+  },
   workspaceInfo: {
     display: "flex",
     flexDirection: "column",
     gap: "0.125rem",
     flex: 1,
     minWidth: 0,
+  },
+  workspaceNameRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
   },
   workspaceItemName: {
     fontSize: "0.875rem",
@@ -366,6 +426,21 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
+  },
+  statusDotOnline: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    background: "#34d399",
+    boxShadow: "0 0 6px #34d399",
+    flexShrink: 0,
+  },
+  statusDotOffline: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    background: "#6b7280",
+    flexShrink: 0,
   },
   activeLabel: {
     fontSize: "0.6875rem",
@@ -390,25 +465,65 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center",
     color: "var(--text-tertiary)",
     fontSize: "0.875rem",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "0.75rem",
+  },
+  addNewButtonSmall: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.375rem",
+    padding: "0.5rem 1rem",
+    fontSize: "0.8125rem",
+    fontWeight: "600",
+    color: "#ffffff",
+    background: "var(--gradient-blue)",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    transition: "all 0.15s ease",
   },
   divider: {
     height: "1px",
     background: "var(--border-color)",
   },
-  manageButton: {
+  footerButtons: {
+    display: "flex",
+    gap: "0.5rem",
+    padding: "0.75rem 1rem",
+  },
+  addNewButton: {
+    flex: 1,
     display: "flex",
     alignItems: "center",
-    gap: "0.75rem",
-    width: "100%",
-    padding: "0.875rem 1.25rem",
-    fontSize: "0.875rem",
-    fontWeight: "500",
-    color: "var(--text-secondary)",
-    background: "transparent",
+    justifyContent: "center",
+    gap: "0.5rem",
+    padding: "0.625rem 0.75rem",
+    fontSize: "0.8125rem",
+    fontWeight: "600",
+    color: "#ffffff",
+    background: "var(--gradient-blue)",
     border: "none",
+    borderRadius: "8px",
     cursor: "pointer",
     transition: "all 0.15s ease",
-    textAlign: "left",
+  },
+  manageButton: {
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "0.5rem",
+    padding: "0.625rem 0.75rem",
+    fontSize: "0.8125rem",
+    fontWeight: "500",
+    color: "var(--text-secondary)",
+    background: "var(--button-bg)",
+    border: "1px solid var(--card-border)",
+    borderRadius: "8px",
+    cursor: "pointer",
+    transition: "all 0.15s ease",
   },
 };
 

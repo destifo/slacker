@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: slacker_app
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgres://slacker:slacker_secret@postgres:5432/slacker
+      - PORT=3000
+      - SERVER_IP=0.0.0.0
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:3000/api/auth/callback}
+      - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-change-in-production}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your-encryption-key-change-in-production}
+    volumes:
+      - ./workspaces.yaml:/app/workspaces.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: slacker_db
+    environment:
+      POSTGRES_USER: slacker
+      POSTGRES_PASSWORD: slacker_secret
+      POSTGRES_DB: slacker
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slacker -d slacker"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+

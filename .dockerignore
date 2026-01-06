@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# Node modules (will be installed fresh in container)
+frontend/node_modules/
+
+# Frontend build (will be built in container)
+frontend/dist/
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+workspaces.yaml
+
+# Tests
+tests/
+
+# Documentation
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Misc
+.DS_Store
+*.log
+

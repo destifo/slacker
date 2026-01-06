@@ -3,6 +3,8 @@ import { TaskBoard } from './components/TaskBoard'
 import { LoginPage } from './components/LoginPage'
 import { AuthCallback } from './components/AuthCallback'
 import { ProjectsPage } from './components/ProjectsPage'
+import { SetupWizard } from './components/SetupWizard'
+import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage'
 import { ThemeProvider } from './hooks/useTheme'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { Loader2 } from 'lucide-react'
@@ -11,6 +13,11 @@ import './App.css'
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth()
   const [currentPath, setCurrentPath] = useState(window.location.pathname)
+
+  const navigate = (path: string) => {
+    window.history.pushState({}, '', path)
+    setCurrentPath(path)
+  }
 
   useEffect(() => {
     // Listen for navigation changes
@@ -47,6 +54,17 @@ function AppContent() {
   // Handle authenticated routes
   if (currentPath === '/projects') {
     return <ProjectsPage />
+  }
+
+  // Setup wizard - requires auth since tokens are encrypted with user context
+  if (currentPath === '/setup') {
+    return <SetupWizard onComplete={() => navigate('/projects')} />
+  }
+
+  // Workspace settings page
+  const settingsMatch = currentPath.match(/^\/workspaces\/(.+)\/settings$/)
+  if (settingsMatch) {
+    return <WorkspaceSettingsPage workspaceName={decodeURIComponent(settingsMatch[1])} />
   }
 
   // Show task board for authenticated users

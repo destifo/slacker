@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
-import { Loader2, Link2, Unlink, AlertCircle, CheckCircle2, RefreshCw, ArrowLeft } from "lucide-react";
+import { Loader2, Link2, Unlink, AlertCircle, CheckCircle2, RefreshCw, ArrowLeft, Plus, Wifi, WifiOff, Settings } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
 import { useAuth } from "../hooks/useAuth";
@@ -10,6 +10,12 @@ interface Workspace {
   is_linked: boolean;
   is_active: boolean;
   slack_member_id: string | null;
+  is_bot_connected: boolean;
+  bot_connected_at: string | null;
+  bot_last_heartbeat: string | null;
+  bot_error: string | null;
+  is_syncing: boolean;
+  sync_progress: string | null;
 }
 
 interface WorkspacesResponse {
@@ -27,6 +33,15 @@ export function ProjectsPage() {
   useEffect(() => {
     fetchWorkspaces();
   }, []);
+
+  // Auto-refresh when any workspace is syncing
+  useEffect(() => {
+    const isSyncing = workspaces.some(w => w.is_syncing);
+    if (isSyncing) {
+      const interval = setInterval(fetchWorkspaces, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [workspaces]);
 
   const fetchWorkspaces = async () => {
     try {
@@ -86,6 +101,16 @@ export function ProjectsPage() {
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
 
+  const goToSetup = () => {
+    window.history.pushState({}, "", "/setup");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
+  const goToSettings = (workspaceName: string) => {
+    window.history.pushState({}, "", `/workspaces/${encodeURIComponent(workspaceName)}/settings`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
@@ -111,6 +136,10 @@ export function ProjectsPage() {
           </p>
         </div>
         <div style={styles.headerActions}>
+          <button onClick={goToSetup} style={styles.addButton} title="Add Workspace">
+            <Plus size={18} />
+            <span>Add Workspace</span>
+          </button>
           <button onClick={fetchWorkspaces} style={styles.refreshButton} title="Refresh">
             <RefreshCw size={18} />
           </button>
@@ -132,8 +161,12 @@ export function ProjectsPage() {
             <div style={styles.emptyIcon}>📁</div>
             <h3 style={styles.emptyTitle}>No Workspaces Configured</h3>
             <p style={styles.emptyText}>
-              Add workspace configurations to the `workspaces.yaml` file
+              Get started by adding your first Slack workspace
             </p>
+            <button onClick={goToSetup} style={styles.emptyAddButton}>
+              <Plus size={20} />
+              <span>Add Your First Workspace</span>
+            </button>
           </div>
         ) : (
           <div style={styles.grid}>
@@ -146,6 +179,7 @@ export function ProjectsPage() {
                 onLink={handleLink}
                 onUnlink={handleUnlink}
                 onSwitch={handleSwitch}
+                onSettings={goToSettings}
               />
             ))}
           </div>
@@ -162,9 +196,10 @@ interface WorkspaceCardProps {
   onLink: (name: string) => void;
   onUnlink: (name: string) => void;
   onSwitch: (name: string) => void;
+  onSettings: (name: string) => void;
 }
 
-function WorkspaceCard({ workspace, isLinking, isSwitching, onLink, onUnlink, onSwitch }: WorkspaceCardProps) {
+function WorkspaceCard({ workspace, isLinking, isSwitching, onLink, onUnlink, onSwitch, onSettings }: WorkspaceCardProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   const cardStyle = {
@@ -173,14 +208,73 @@ function WorkspaceCard({ workspace, isLinking, isSwitching, onLink, onUnlink, on
     ...(isHovered ? styles.cardHover : {}),
   };
 
+  const formatTimeAgo = (isoString: string | null) => {
+    if (!isoString) return null;
+    const date = new Date(isoString);
+    const now = new Date();
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  };
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Don't navigate if clicking on a button
+    if ((e.target as HTMLElement).closest('button')) {
+      return;
+    }
+    onSettings(workspace.name);
+  };
+
   return (
     <div
       style={cardStyle}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onClick={handleCardClick}
     >
+      {/* Bot Status Indicator */}
+      <div style={styles.botStatusRow}>
+        {workspace.is_syncing ? (
+          <div style={styles.botStatusSyncing}>
+            <Loader2 size={14} style={styles.syncSpinner} />
+            <span>Syncing</span>
+            {workspace.sync_progress && (
+              <span style={styles.syncProgress}>• {workspace.sync_progress}</span>
+            )}
+          </div>
+        ) : workspace.is_bot_connected ? (
+          <div style={styles.botStatusOnline}>
+            <Wifi size={14} />
+            <span>Live</span>
+            {workspace.bot_last_heartbeat && (
+              <span style={styles.heartbeatTime}>• {formatTimeAgo(workspace.bot_last_heartbeat)}</span>
+            )}
+          </div>
+        ) : (
+          <div style={styles.botStatusOffline}>
+            <WifiOff size={14} />
+            <span>Offline</span>
+            {workspace.bot_error && (
+              <span style={styles.errorHint} title={workspace.bot_error}>• Error</span>
+            )}
+          </div>
+        )}
+      </div>
+
       <div style={styles.cardHeader}>
-        <h3 style={styles.workspaceName}>{workspace.name}</h3>
+        <div style={styles.cardTitleRow}>
+          <h3 style={styles.workspaceName}>{workspace.name}</h3>
+          <button
+            onClick={() => onSettings(workspace.name)}
+            style={styles.settingsButton}
+            title="Workspace Settings"
+          >
+            <Settings size={16} />
+          </button>
+        </div>
         <div style={styles.badges}>
           {workspace.is_active && (
             <div style={styles.activeBadge}>
@@ -333,6 +427,21 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     transition: "all 0.2s",
   },
+  addButton: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+    padding: "0.5rem 1rem",
+    background: "var(--gradient-blue)",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    color: "#ffffff",
+    fontSize: "0.875rem",
+    fontWeight: "600",
+    boxShadow: "0 4px 12px var(--glow-blue)",
+    transition: "all 0.2s",
+  },
   content: {
     padding: "2rem",
     maxWidth: "1400px",
@@ -361,6 +470,66 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "1.5rem",
     transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
     animation: "fadeInUp 0.4s ease",
+    cursor: "pointer",
+  },
+  botStatusRow: {
+    marginBottom: "1rem",
+  },
+  botStatusOnline: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "0.375rem",
+    padding: "0.375rem 0.75rem",
+    background: "rgba(52, 211, 153, 0.1)",
+    border: "1px solid rgba(52, 211, 153, 0.3)",
+    borderRadius: "20px",
+    fontSize: "0.75rem",
+    fontWeight: "600",
+    color: "#34d399",
+  },
+  botStatusOffline: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "0.375rem",
+    padding: "0.375rem 0.75rem",
+    background: "rgba(239, 68, 68, 0.1)",
+    border: "1px solid rgba(239, 68, 68, 0.3)",
+    borderRadius: "20px",
+    fontSize: "0.75rem",
+    fontWeight: "600",
+    color: "#ef4444",
+  },
+  botStatusSyncing: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "0.375rem",
+    padding: "0.375rem 0.75rem",
+    background: "rgba(129, 140, 248, 0.1)",
+    border: "1px solid rgba(129, 140, 248, 0.3)",
+    borderRadius: "20px",
+    fontSize: "0.75rem",
+    fontWeight: "600",
+    color: "#818cf8",
+  },
+  syncSpinner: {
+    animation: "spin 1s linear infinite",
+  },
+  syncProgress: {
+    opacity: 0.8,
+    fontWeight: "500",
+    maxWidth: "150px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
+  heartbeatTime: {
+    opacity: 0.7,
+    fontWeight: "500",
+  },
+  errorHint: {
+    opacity: 0.8,
+    fontWeight: "500",
+    cursor: "help",
   },
   cardActive: {
     borderColor: "var(--accent-color)",
@@ -378,11 +547,28 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: "1rem",
     gap: "1rem",
   },
+  cardTitleRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+  },
   workspaceName: {
     fontSize: "1.25rem",
     fontWeight: "600",
     color: "var(--text-primary)",
     margin: 0,
+  },
+  settingsButton: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0.375rem",
+    background: "var(--button-bg)",
+    border: "1px solid var(--card-border)",
+    borderRadius: "6px",
+    cursor: "pointer",
+    color: "var(--text-tertiary)",
+    transition: "all 0.2s",
   },
   badges: {
     display: "flex",
@@ -520,7 +706,22 @@ const styles: Record<string, React.CSSProperties> = {
   emptyText: {
     fontSize: "0.9375rem",
     color: "var(--text-secondary)",
-    margin: 0,
+    margin: "0 0 1.5rem 0",
+  },
+  emptyAddButton: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+    padding: "0.875rem 1.5rem",
+    background: "var(--gradient-blue)",
+    border: "none",
+    borderRadius: "10px",
+    cursor: "pointer",
+    color: "#ffffff",
+    fontSize: "1rem",
+    fontWeight: "600",
+    boxShadow: "0 4px 16px var(--glow-blue)",
+    transition: "all 0.2s",
   },
 };
 

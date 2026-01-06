@@ -7,7 +7,7 @@ use slacker::{
     core::server::create_server,
     sockets::slack_bot::SlackBot,
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -16,14 +16,19 @@ async fn main() -> Result<()> {
 
     let config = Config::load_envs().expect("Failed to load envs");
 
+    // Check if using default encryption key
+    if config.encryption_key == "change-this-default-encryption-key-in-production" {
+        warn!("⚠️  Using default encryption key! Set ENCRYPTION_KEY in production!");
+    }
+
     let port: u16 = config.port.clone();
     let server_ip_str: String = config.server_ip.clone();
     let server_ip: IpAddr = server_ip_str.parse().unwrap_or(IpAddr::from([0, 0, 0, 0]));
     let addr = SocketAddr::new(server_ip, port);
-    let (server, db_conn) = create_server(config.clone()).await?;
+    let (server, db_conn, bot_status) = create_server(config.clone()).await?;
 
-    // Load workspaces and spawn a bot for each
-    match WorkspacesConfig::load_from_file("workspaces.yaml") {
+    // Load and decrypt workspaces, spawn a bot for each
+    match WorkspacesConfig::load_and_decrypt("workspaces.yaml", &config.encryption_key) {
         Ok(workspaces_config) => {
             info!(
                 "Loaded {} workspaces from config",
@@ -36,6 +41,7 @@ async fn main() -> Result<()> {
                     workspace_config.app_token,
                     workspace_config.bot_token,
                     db_conn.clone(),
+                    bot_status.clone(),
                 );
 
                 tokio::spawn(async move {

@@ -3,3 +3,4 @@ pub mod task;
 pub mod person;
 pub mod change;
 pub mod workspace_link;
+pub mod workspace_settings;

@@ -11,8 +11,9 @@ use tracing::{error, info, warn};
 
 use crate::{
     config::{config::Config, workspaces::WorkspacesConfig},
-    models::task::TaskStatus,
-    repos::{messages::MessagesRepo, persons::PersonsRepo, tasks::TasksRepo, workspace_links::WorkspaceLinksRepo},
+    core::bot_status::BotStatusManager,
+    models::{task::TaskStatus, workspace_settings::EmojiMappings},
+    repos::{messages::MessagesRepo, persons::PersonsRepo, tasks::TasksRepo, workspace_links::WorkspaceLinksRepo, workspace_settings::WorkspaceSettingsRepo},
     services::slack_service::eval_status_from_reactions,
 };
 
@@ -84,25 +85,29 @@ struct Acknowledgment {
     envelope_id: String,
 }
 
-fn emoji_to_status(emoji: &str) -> Option<TaskStatus> {
-    match emoji {
-        "eyes" => Some(TaskStatus::InProgress),
-        "arrows_counterclockwise" | "loading" | "hourglass" => Some(TaskStatus::Blocked),
-        "white_check_mark" | "heavy_check_mark" => Some(TaskStatus::Completed),
-        _ => None,
+fn emoji_to_status(emoji: &str, mappings: &EmojiMappings) -> Option<TaskStatus> {
+    if mappings.in_progress.contains(&emoji.to_string()) {
+        return Some(TaskStatus::InProgress);
     }
+    if mappings.blocked.contains(&emoji.to_string()) {
+        return Some(TaskStatus::Blocked);
+    }
+    if mappings.completed.contains(&emoji.to_string()) {
+        return Some(TaskStatus::Completed);
+    }
+    None
 }
 
-fn map_reactions_to_status(reactions: &Vec<SlackReaction>) -> HashSet<TaskStatus> {
+fn map_reactions_to_status(reactions: &Vec<SlackReaction>, mappings: &EmojiMappings) -> HashSet<TaskStatus> {
     let mut status_set: HashSet<TaskStatus> = HashSet::new();
 
     for reaction in reactions {
-        match emoji_to_status(&reaction.name) {
+        match emoji_to_status(&reaction.name, mappings) {
             Some(status) => {
                 status_set.insert(status);
             }
             None => {
-                warn!("Wrong emoji type received: {}", &reaction.name);
+                // Silently ignore non-mapped emojis (common case)
             }
         };
     }
@@ -116,6 +121,7 @@ pub struct SlackBot {
     bot_token: String,
     db: DatabaseConnection,
     http_client: Client,
+    status_manager: BotStatusManager,
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,13 +144,20 @@ struct ReactionsResponse {
 }
 
 impl SlackBot {
-    pub fn new(workspace_name: String, app_token: String, bot_token: String, db: DatabaseConnection) -> Self {
+    pub fn new(
+        workspace_name: String, 
+        app_token: String, 
+        bot_token: String, 
+        db: DatabaseConnection,
+        status_manager: BotStatusManager,
+    ) -> Self {
         Self {
             workspace_name,
             app_token,
             bot_token,
             db,
             http_client: Client::new(),
+            status_manager,
         }
     }
 
@@ -166,9 +179,32 @@ impl SlackBot {
         let (ws_stream, _) = connect_async(&ws_url).await?;
         let (mut write, mut read) = ws_stream.split();
 
-        info!("Connected to Slack Socket Mode!");
+        info!("Connected to Slack Socket Mode for workspace: {}", self.workspace_name);
+        
+        // Mark as connected
+        self.status_manager.set_connected(&self.workspace_name).await;
+
+        // Spawn initial sync in background so it doesn't block the event loop
+        let workspace_name_clone = self.workspace_name.clone();
+        let bot_token_clone = self.bot_token.clone();
+        let db_clone = self.db.clone();
+        let status_manager_clone = self.status_manager.clone();
+        
+        tokio::spawn(async move {
+            let syncer = InitialSyncer {
+                workspace_name: workspace_name_clone,
+                bot_token: bot_token_clone,
+                db: db_clone,
+                http_client: Client::new(),
+                status_manager: status_manager_clone,
+            };
+            syncer.perform_initial_sync_for_all_users().await;
+        });
 
         while let Some(msg) = read.next().await {
+            // Update heartbeat on any message
+            self.status_manager.heartbeat(&self.workspace_name).await;
+            
             match msg {
                 Ok(Message::Text(text)) => {
                     info!("Received text message: {}", text);
@@ -200,14 +236,22 @@ impl SlackBot {
                 Ok(Message::Ping(data)) => {
                     write.send(Message::Pong(data)).await?;
                 }
-                Ok(Message::Close(_)) => break,
+                Ok(Message::Close(_)) => {
+                    info!("WebSocket closed for workspace: {}", self.workspace_name);
+                    self.status_manager.set_disconnected(&self.workspace_name, Some("Connection closed".to_string())).await;
+                    break;
+                }
                 Err(e) => {
-                    error!("WebSocket error: {}", e);
+                    error!("WebSocket error for {}: {}", self.workspace_name, e);
+                    self.status_manager.set_disconnected(&self.workspace_name, Some(e.to_string())).await;
                     break;
                 }
                 _ => {}
             }
         }
+
+        // Mark as disconnected when loop exits
+        self.status_manager.set_disconnected(&self.workspace_name, None).await;
 
         Ok(())
     }
@@ -231,6 +275,14 @@ impl SlackBot {
         }
     }
 
+    async fn get_emoji_mappings(&self) -> EmojiMappings {
+        let settings_repo = WorkspaceSettingsRepo::new(self.db.clone());
+        settings_repo
+            .get_emoji_mappings(&self.workspace_name)
+            .await
+            .unwrap_or_else(|_| EmojiMappings::default_mappings())
+    }
+
     async fn handle_reaction_added(&self, event: SlackEvent) -> Result<()> {
         let user = match &event.user {
             Some(u) => u,
@@ -242,7 +294,10 @@ impl SlackBot {
             None => return Ok(()),
         };
 
-        if emoji_to_status(reaction).is_none() {
+        // Get emoji mappings for this workspace
+        let emoji_mappings = self.get_emoji_mappings().await;
+
+        if emoji_to_status(reaction, &emoji_mappings).is_none() {
             info!("Ignoring non-task emoji: {}", reaction);
             return Ok(());
         }
@@ -311,7 +366,16 @@ impl SlackBot {
         let workspace_links_repo = WorkspaceLinksRepo::new(self.db.clone());
 
         // Get person by external_id (Slack member ID)
-        let person = persons_repo.get_by_external_id(slack_message.user.clone()).await?;
+        let person = match persons_repo.get_by_external_id(slack_message.user.clone()).await {
+            Ok(p) => p,
+            Err(_) => {
+                info!(
+                    "No person found for Slack member {} - skipping task creation",
+                    slack_message.user
+                );
+                return Ok(());
+            }
+        };
 
         // Check if person is linked to this workspace
         match workspace_links_repo
@@ -378,7 +442,10 @@ impl SlackBot {
         let reactions = self
             .fetch_message_reactions(channel, message_timestamp)
             .await?;
-        let status_set = map_reactions_to_status(&reactions);
+        
+        // Get emoji mappings for this workspace
+        let emoji_mappings = self.get_emoji_mappings().await;
+        let status_set = map_reactions_to_status(&reactions, &emoji_mappings);
         let correct_status = eval_status_from_reactions(status_set);
         let status = correct_status;
 
@@ -426,12 +493,15 @@ impl SlackBot {
         let messages_repo = MessagesRepo::new(self.db.clone());
         let tasks_repo = TasksRepo::new(self.db.clone());
         let all_messages = messages_repo.get_all().await?;
+        
+        // Get emoji mappings for this workspace
+        let emoji_mappings = self.get_emoji_mappings().await;
 
         for message in all_messages {
             let message_reactions = self
                 .fetch_message_reactions(&message.channel, &message.timestamp)
                 .await?;
-            let status_set = map_reactions_to_status(&message_reactions);
+            let status_set = map_reactions_to_status(&message_reactions, &emoji_mappings);
             let correct_status = eval_status_from_reactions(status_set);
 
             let mapped_task = tasks_repo.get_task_by_message_id(message.id).await?;
@@ -455,5 +525,340 @@ impl SlackBot {
                 error!("Periodic task failed: {}", e);
             }
         }
+    }
+}
+
+// Additional structs for channel listing and history
+#[derive(Debug, Deserialize)]
+struct SlackChannel {
+    id: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChannelsResponse {
+    ok: bool,
+    channels: Option<Vec<SlackChannel>>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoryMessage {
+    #[serde(default)]
+    user: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    ts: String,
+    #[serde(default)]
+    reactions: Option<Vec<HistoryReaction>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoryReaction {
+    name: String,
+    #[serde(default)]
+    users: Option<Vec<String>>,
+    #[serde(default)]
+    count: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoryResponse {
+    ok: bool,
+    messages: Option<Vec<HistoryMessage>>,
+    response_metadata: Option<ResponseMetadata>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResponseMetadata {
+    next_cursor: Option<String>,
+}
+
+/// Separate struct for initial sync to run in background without blocking SlackBot
+pub struct InitialSyncer {
+    pub workspace_name: String,
+    pub bot_token: String,
+    pub db: DatabaseConnection,
+    pub http_client: Client,
+    pub status_manager: BotStatusManager,
+}
+
+impl InitialSyncer {
+    pub fn new(
+        workspace_name: String,
+        bot_token: String,
+        db: DatabaseConnection,
+        status_manager: BotStatusManager,
+    ) -> Self {
+        Self {
+            workspace_name,
+            bot_token,
+            db,
+            http_client: Client::new(),
+            status_manager,
+        }
+    }
+}
+
+impl InitialSyncer {
+    pub async fn perform_initial_sync_for_all_users(&self) {
+        info!("Starting initial sync for all users in workspace: {}", self.workspace_name);
+        
+        let workspace_links_repo = WorkspaceLinksRepo::new(self.db.clone());
+        
+        // Get all linked users for this workspace
+        match workspace_links_repo.get_by_workspace(self.workspace_name.clone()).await {
+            Ok(links) => {
+                info!("Found {} linked users for workspace {}", links.len(), self.workspace_name);
+                
+                if links.is_empty() {
+                    info!("No linked users to sync for workspace {}", self.workspace_name);
+                    self.status_manager.set_sync_complete(&self.workspace_name).await;
+                    return;
+                }
+                
+                for link in links {
+                    if let Some(slack_member_id) = &link.slack_member_id {
+                        info!("Syncing messages for user with Slack ID: {}", slack_member_id);
+                        if let Err(e) = self.perform_initial_sync(slack_member_id).await {
+                            error!("Failed to sync for user {}: {}", slack_member_id, e);
+                            // Clear syncing status on error
+                            self.status_manager.set_sync_complete(&self.workspace_name).await;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to get workspace links for {}: {}", self.workspace_name, e);
+                // Clear syncing status on error
+                self.status_manager.set_sync_complete(&self.workspace_name).await;
+            }
+        }
+        
+        info!("Initial sync completed for workspace: {}", self.workspace_name);
+    }
+
+    async fn get_emoji_mappings(&self) -> EmojiMappings {
+        let settings_repo = WorkspaceSettingsRepo::new(self.db.clone());
+        settings_repo
+            .get_emoji_mappings(&self.workspace_name)
+            .await
+            .unwrap_or_else(|_| EmojiMappings::default_mappings())
+    }
+
+    pub async fn perform_initial_sync(&self, user_slack_id: &str) -> Result<()> {
+        info!("Starting initial sync for user {} in workspace {}", user_slack_id, self.workspace_name);
+        
+        self.status_manager.set_syncing(&self.workspace_name, Some("Fetching channels...".to_string())).await;
+
+        // Fetch all channels the bot has access to
+        let channels = match self.fetch_channels().await {
+            Ok(c) => c,
+            Err(e) => {
+                error!("Failed to fetch channels: {}. Make sure your Slack app has the 'channels:read' and 'groups:read' scopes.", e);
+                self.status_manager.set_sync_complete(&self.workspace_name).await;
+                return Err(e);
+            }
+        };
+        info!("Found {} channels to sync", channels.len());
+
+        let emoji_mappings = self.get_emoji_mappings().await;
+        let mut processed_messages = 0;
+        let mut created_tasks = 0;
+
+        for (idx, channel) in channels.iter().enumerate() {
+            let progress = format!("Scanning channel {}/{}: {}", idx + 1, channels.len(), channel.name);
+            self.status_manager.set_syncing(&self.workspace_name, Some(progress)).await;
+
+            // Fetch messages with reactions from this channel
+            match self.fetch_channel_messages_with_reactions(&channel.id, user_slack_id).await {
+                Ok(messages) => {
+                    for msg in messages {
+                        processed_messages += 1;
+                        
+                        // Check if message has tracked reactions
+                        if let Some(reactions) = &msg.reactions {
+                            let slack_reactions: Vec<SlackReaction> = reactions.iter().map(|hr| SlackReaction {
+                                name: hr.name.clone(),
+                                users: hr.users.clone().unwrap_or_default(),
+                                count: hr.count.unwrap_or(0),
+                            }).collect();
+                            
+                            let status_set = map_reactions_to_status(&slack_reactions, &emoji_mappings);
+                            if !status_set.is_empty() {
+                                if let Err(e) = self.create_task_from_history(&msg, &channel.id, &emoji_mappings).await {
+                                    warn!("Failed to create task from history: {}", e);
+                                } else {
+                                    created_tasks += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to fetch messages from channel {}: {}", channel.name, e);
+                }
+            }
+        }
+
+        info!("Initial sync complete for workspace {}. Processed {} messages, created {} tasks", 
+              self.workspace_name, processed_messages, created_tasks);
+        
+        self.status_manager.set_sync_complete(&self.workspace_name).await;
+        
+        Ok(())
+    }
+
+    async fn fetch_channels(&self) -> Result<Vec<SlackChannel>> {
+        let response = self
+            .http_client
+            .get("https://slack.com/api/conversations.list")
+            .header("Authorization", format!("Bearer {}", self.bot_token))
+            .query(&[
+                ("types", "public_channel,private_channel"),
+                ("exclude_archived", "true"),
+                ("limit", "1000"),
+            ])
+            .send()
+            .await?
+            .json::<ChannelsResponse>()
+            .await?;
+
+        if !response.ok {
+            return Err(anyhow::anyhow!("Failed to fetch channels: {:?}", response.error));
+        }
+
+        Ok(response.channels.unwrap_or_default())
+    }
+
+    async fn fetch_channel_messages_with_reactions(
+        &self, 
+        channel_id: &str, 
+        user_slack_id: &str
+    ) -> Result<Vec<HistoryMessage>> {
+        let mut all_messages = Vec::new();
+        let mut cursor: Option<String> = None;
+        let mut pages = 0;
+        const MAX_PAGES: i32 = 5;
+
+        loop {
+            let mut query = vec![
+                ("channel", channel_id.to_string()),
+                ("limit", "100".to_string()),
+            ];
+            
+            if let Some(ref c) = cursor {
+                query.push(("cursor", c.clone()));
+            }
+
+            let response = self
+                .http_client
+                .get("https://slack.com/api/conversations.history")
+                .header("Authorization", format!("Bearer {}", self.bot_token))
+                .query(&query)
+                .send()
+                .await?
+                .json::<HistoryResponse>()
+                .await?;
+
+            if !response.ok {
+                break;
+            }
+
+            if let Some(messages) = response.messages {
+                let user_messages: Vec<HistoryMessage> = messages
+                    .into_iter()
+                    .filter(|m| m.user.as_ref() == Some(&user_slack_id.to_string()) && m.reactions.is_some())
+                    .collect();
+                
+                all_messages.extend(user_messages);
+            }
+
+            pages += 1;
+            if pages >= MAX_PAGES {
+                break;
+            }
+
+            if let Some(metadata) = response.response_metadata {
+                if let Some(next_cursor) = metadata.next_cursor {
+                    if next_cursor.is_empty() {
+                        break;
+                    }
+                    cursor = Some(next_cursor);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+
+        Ok(all_messages)
+    }
+
+    async fn create_task_from_history(
+        &self, 
+        msg: &HistoryMessage, 
+        channel_id: &str,
+        emoji_mappings: &EmojiMappings,
+    ) -> Result<()> {
+        let persons_repo = PersonsRepo::new(self.db.clone());
+        let messages_repo = MessagesRepo::new(self.db.clone());
+        let tasks_repo = TasksRepo::new(self.db.clone());
+        let workspace_links_repo = WorkspaceLinksRepo::new(self.db.clone());
+
+        let user_id = msg.user.as_ref().ok_or_else(|| anyhow::anyhow!("No user on message"))?;
+        let text = msg.text.as_ref().cloned().unwrap_or_default();
+        let ts = &msg.ts;
+
+        // Look up person by external_id (Slack member ID)
+        let person = persons_repo
+            .get_by_external_id(user_id.clone())
+            .await
+            .map_err(|_| anyhow::anyhow!("No person found for Slack member {}", user_id))?;
+
+        // Verify person is linked to this workspace
+        match workspace_links_repo
+            .get_by_person_and_workspace(person.id.clone(), self.workspace_name.clone())
+            .await
+        {
+            Ok(link) if link.is_linked => {}
+            _ => return Err(anyhow::anyhow!("Person {} not linked to workspace {}", person.email, self.workspace_name)),
+        }
+
+        let message_external_id = format!("slack:{}:{}", channel_id, ts);
+        
+        if messages_repo.get_message_by_external_id(message_external_id.clone()).await.is_ok() {
+            return Ok(());
+        }
+
+        let message = messages_repo
+            .create(
+                text,
+                message_external_id,
+                channel_id.to_string(),
+                ts.clone(),
+                &person,
+            )
+            .await?;
+
+        let reactions: Vec<SlackReaction> = msg.reactions.as_ref().map(|r| {
+            r.iter().map(|hr| SlackReaction {
+                name: hr.name.clone(),
+                users: hr.users.clone().unwrap_or_default(),
+                count: hr.count.unwrap_or(0),
+            }).collect()
+        }).unwrap_or_default();
+
+        let status_set = map_reactions_to_status(&reactions, emoji_mappings);
+        let status = eval_status_from_reactions(status_set);
+
+        tasks_repo
+            .create(status, person, chrono::Utc::now().naive_utc(), message)
+            .await?;
+
+        Ok(())
     }
 }

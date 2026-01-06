@@ -21,6 +21,11 @@ pub struct Config {
     pub jwt_secret: String,
     #[serde(default = "default_jwt_expiry")]
     pub jwt_expiry_hours: i64,
+
+    /// Master key for encrypting workspace tokens
+    /// IMPORTANT: Keep this secret and don't lose it!
+    #[serde(default = "default_encryption_key")]
+    pub encryption_key: String,
 }
 
 fn default_port() -> u16 {
@@ -38,6 +43,11 @@ fn default_min_connections() -> u32 {
 
 fn default_jwt_expiry() -> i64 {
     168
+}
+
+fn default_encryption_key() -> String {
+    // WARNING: This default is insecure! Set ENCRYPTION_KEY in production!
+    "change-this-default-encryption-key-in-production".to_string()
 }
 
 impl Config {

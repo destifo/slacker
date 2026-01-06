@@ -104,53 +104,47 @@ pub async fn google_callback(
         Err(_) => {
             info!("Signing up unregistered user: {}", user_info.name);
 
-            // Load workspaces config to find first workspace
+            // Try to load workspaces config - it's OK if none exist
             let workspaces_config =
-                WorkspacesConfig::load_from_file("workspaces.yaml").map_err(|e| {
-                    error!("Failed to load workspaces config: {}", e);
-                    APIError::InternalServerError(
-                        "Failed to load workspaces configuration".to_string(),
-                    )
-                })?;
+                WorkspacesConfig::load_and_decrypt("workspaces.yaml", &state.config.encryption_key)
+                    .ok();
 
-            let workspace_names = workspaces_config.list_workspaces();
-            if workspace_names.is_empty() {
-                return Err(APIError::InternalServerError(
-                    "No workspaces configured".to_string(),
-                ));
-            }
+            let workspace_names = workspaces_config
+                .as_ref()
+                .map(|c| c.list_workspaces())
+                .unwrap_or_default();
 
-            // Try to find user in any workspace
+            // Try to find user in any workspace (if workspaces exist)
             let mut found_workspace: Option<(String, String, String)> = None;
-            for workspace_name in workspace_names.iter() {
-                if let Some(workspace_config) = workspaces_config.get_workspace(workspace_name) {
-                    if let Ok((slack_member_id, slack_name)) = fetch_user_by_email_with_config(
-                        &workspace_config.bot_token,
-                        &state.config.google_client_id,
-                        &user_info.email,
-                    )
-                    .await
-                    {
-                        found_workspace =
-                            Some((workspace_name.clone(), slack_member_id, slack_name));
-                        break;
+            if let Some(ref config) = workspaces_config {
+                for workspace_name in workspace_names.iter() {
+                    if let Some(workspace_config) = config.get_workspace(workspace_name) {
+                        if let Ok((slack_member_id, slack_name)) = fetch_user_by_email_with_config(
+                            &workspace_config.bot_token,
+                            &state.config.google_client_id,
+                            &user_info.email,
+                        )
+                        .await
+                        {
+                            found_workspace =
+                                Some((workspace_name.clone(), slack_member_id, slack_name));
+                            break;
+                        }
                     }
                 }
             }
 
-            let (workspace_name, slack_member_id, slack_name) =
-                found_workspace.ok_or_else(|| {
-                    error!("User not found in any workspace");
-                    APIError::BadRequest(format!(
-                        "Email {} is not found in any configured workspace",
-                        &user_info.email
-                    ))
-                })?;
-
-            let name = if slack_name.is_empty() {
-                user_info.name
-            } else {
-                slack_name
+            // Create person - use Slack name if found, otherwise Google name
+            let (name, slack_member_id) = match &found_workspace {
+                Some((_, member_id, slack_name)) => {
+                    let name = if slack_name.is_empty() {
+                        user_info.name.clone()
+                    } else {
+                        slack_name.clone()
+                    };
+                    (name, member_id.clone())
+                }
+                None => (user_info.name.clone(), String::new()),
             };
 
             let created_person = person_repo
@@ -166,24 +160,31 @@ pub async fn google_callback(
                     APIError::InternalServerError("Failed to create person entity".to_string())
                 })?;
 
-            // Auto-link to the workspace where they were found
-            let workspace_links_repo = WorkspaceLinksRepo::new(state.database.clone());
-            workspace_links_repo
-                .link_workspace(
-                    created_person.id.clone(),
-                    workspace_name.clone(),
-                    slack_member_id,
-                )
-                .await
-                .map_err(|e| {
+            // Auto-link to the workspace where they were found (if any)
+            if let Some((workspace_name, slack_member_id, _)) = found_workspace {
+                let workspace_links_repo = WorkspaceLinksRepo::new(state.database.clone());
+                if let Err(e) = workspace_links_repo
+                    .link_workspace(
+                        created_person.id.clone(),
+                        workspace_name.clone(),
+                        slack_member_id,
+                    )
+                    .await
+                {
+                    // Log but don't fail - user can link manually later
                     error!("Failed to auto-link workspace: {}", e);
-                    APIError::InternalServerError("Failed to link workspace".to_string())
-                })?;
-
-            info!(
-                "Auto-linked {} to workspace: {}",
-                user_info.email, workspace_name
-            );
+                } else {
+                    info!(
+                        "Auto-linked {} to workspace: {}",
+                        user_info.email, workspace_name
+                    );
+                }
+            } else {
+                info!(
+                    "No workspace found for {}. User can configure workspaces later.",
+                    user_info.email
+                );
+            }
 
             created_person
         }

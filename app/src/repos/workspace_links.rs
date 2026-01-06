@@ -1,10 +1,11 @@
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter,
+    QueryFilter, QueryOrder, PaginatorTrait,
 };
 
 use crate::{
     models::workspace_link::{self, ActiveModel, Entity as WorkspaceLinkEntity, Model as WorkspaceLink},
+    models::person::{Entity as PersonEntity, Model as Person},
     utils::crypto::generate_uuid,
 };
 
@@ -164,6 +165,73 @@ impl WorkspaceLinksRepo {
         link.is_active = Set(true);
         link.updated_at = Set(Some(chrono::Utc::now().naive_utc()));
         link.update(&self.db).await
+    }
+
+    /// Get a workspace link by Slack member ID and workspace name
+    pub async fn get_by_slack_member_id_and_workspace(
+        &self,
+        slack_member_id: String,
+        workspace_name: String,
+    ) -> Result<WorkspaceLink, DbErr> {
+        let link = WorkspaceLinkEntity::find()
+            .filter(workspace_link::Column::SlackMemberId.eq(Some(slack_member_id)))
+            .filter(workspace_link::Column::WorkspaceName.eq(&workspace_name))
+            .filter(workspace_link::Column::IsLinked.eq(true))
+            .one(&self.db)
+            .await?;
+
+        match link {
+            Some(l) => Ok(l),
+            None => Err(DbErr::RecordNotFound(
+                "Workspace link not found for this Slack member".to_string(),
+            )),
+        }
+    }
+
+    /// Get all links for a workspace (used to find all users in a workspace)
+    pub async fn get_by_workspace(&self, workspace_name: String) -> Result<Vec<WorkspaceLink>, DbErr> {
+        let links = WorkspaceLinkEntity::find()
+            .filter(workspace_link::Column::WorkspaceName.eq(&workspace_name))
+            .filter(workspace_link::Column::IsLinked.eq(true))
+            .order_by_desc(workspace_link::Column::CreatedAt)
+            .all(&self.db)
+            .await?;
+
+        Ok(links)
+    }
+
+    /// Get paginated users for a workspace with their person details
+    pub async fn get_workspace_users_paginated(
+        &self,
+        workspace_name: String,
+        page: u64,
+        per_page: u64,
+    ) -> Result<(Vec<(WorkspaceLink, Person)>, u64), DbErr> {
+        // Get total count
+        let total = WorkspaceLinkEntity::find()
+            .filter(workspace_link::Column::WorkspaceName.eq(&workspace_name))
+            .filter(workspace_link::Column::IsLinked.eq(true))
+            .count(&self.db)
+            .await?;
+
+        // Get paginated links
+        let links = WorkspaceLinkEntity::find()
+            .filter(workspace_link::Column::WorkspaceName.eq(&workspace_name))
+            .filter(workspace_link::Column::IsLinked.eq(true))
+            .order_by_desc(workspace_link::Column::CreatedAt)
+            .paginate(&self.db, per_page)
+            .fetch_page(page)
+            .await?;
+
+        // Fetch persons for each link
+        let mut results: Vec<(WorkspaceLink, Person)> = Vec::new();
+        for link in links {
+            if let Ok(Some(person)) = PersonEntity::find_by_id(&link.person_id).one(&self.db).await {
+                results.push((link, person));
+            }
+        }
+
+        Ok((results, total))
     }
 }
 
