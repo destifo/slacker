@@ -90,53 +90,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMultiAccountStore(store);
   }, []);
 
-  // Verify token for active account
-  const verifyToken = useCallback(async () => {
-    try {
-      const response = await axios.get<Person>("/api/auth/me");
-      // Update person data in store
-      if (multiAccountStore.activeEmail) {
-        const updated = {
-          ...multiAccountStore,
-          accounts: {
-            ...multiAccountStore.accounts,
-            [multiAccountStore.activeEmail]: {
-              ...multiAccountStore.accounts[multiAccountStore.activeEmail],
-              person: response.data,
-            },
-          },
-        };
-        saveStore(updated);
-      }
-    } catch (error: unknown) {
-      const axiosErr = error as {
-        response?: { status?: number };
-        message?: string;
-      };
-      // Only remove account on explicit 401 Unauthorized
-      // Don't remove on network errors or other issues
-      if (axiosErr?.response?.status === 401) {
-        console.warn("Token invalid (401), removing account");
-        if (multiAccountStore.activeEmail) {
-          removeAccount(multiAccountStore.activeEmail);
-        }
-      } else {
-        console.warn(
-          "Failed to verify token (non-auth error):",
-          axiosErr?.message || error
-        );
-        // Keep the account - might be a temporary network issue
-      }
-    }
-  }, [multiAccountStore, saveStore, removeAccount]);
-
-  useEffect(() => {
-    if (token && person) {
-      verifyToken();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
   const login = useCallback(() => {
     // Redirect to Google OAuth
     window.location.href = "/api/auth/google";
@@ -221,6 +174,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [multiAccountStore, saveStore]
   );
+
+  // Verify token for active account (must be after removeAccount)
+  const verifyToken = useCallback(async () => {
+    try {
+      const response = await axios.get<Person>("/api/auth/me");
+      // Update person data in store
+      if (multiAccountStore.activeEmail) {
+        const updated = {
+          ...multiAccountStore,
+          accounts: {
+            ...multiAccountStore.accounts,
+            [multiAccountStore.activeEmail]: {
+              ...multiAccountStore.accounts[multiAccountStore.activeEmail],
+              person: response.data,
+            },
+          },
+        };
+        saveStore(updated);
+      }
+    } catch (error: unknown) {
+      const axiosErr = error as {
+        response?: { status?: number };
+        message?: string;
+      };
+      // Only remove account on explicit 401 Unauthorized
+      // Don't remove on network errors or other issues
+      if (axiosErr?.response?.status === 401) {
+        console.warn("Token invalid (401), removing account");
+        if (multiAccountStore.activeEmail) {
+          removeAccount(multiAccountStore.activeEmail);
+        }
+      } else {
+        console.warn(
+          "Failed to verify token (non-auth error):",
+          axiosErr?.message || error
+        );
+        // Keep the account - might be a temporary network issue
+      }
+    }
+  }, [multiAccountStore, saveStore, removeAccount]);
+
+  useEffect(() => {
+    if (token && person) {
+      verifyToken();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const handleAuthCallback = useCallback(
     (newToken: string, name: string, email: string) => {
