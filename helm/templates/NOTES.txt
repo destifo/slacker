@@ -1,0 +1,41 @@
+🎉 Slacker has been deployed!
+
+{{- if .Values.ingress.enabled }}
+Access the application at:
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+Get the application URL by running:
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "slacker.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+Get the application URL by running:
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+  kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "slacker.fullname" . }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+Get the application URL by running:
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "slacker.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+{{- end }}
+
+📋 Configuration Checklist:
+{{- if not .Values.config.googleClientId }}
+  ⚠️  Google OAuth not configured - set config.googleClientId and config.googleClientSecret
+{{- end }}
+{{- if not .Values.config.jwtSecret }}
+  ⚠️  JWT secret not set - set config.jwtSecret
+{{- end }}
+{{- if not .Values.config.encryptionKey }}
+  ⚠️  Encryption key not set - set config.encryptionKey
+{{- end }}
+{{- if not .Values.workspaces }}
+  ℹ️  No Slack workspaces configured - configure via the UI or set workspaces in values
+{{- end }}
+
+📚 For more information, visit: https://github.com/destifo/slacker

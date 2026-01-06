@@ -1,0 +1,15 @@
+apiVersion: v2
+name: slacker
+description: A Helm chart for Slacker - Slack-based task management app
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - slack
+  - tasks
+  - productivity
+home: https://github.com/destifo/slacker
+sources:
+  - https://github.com/destifo/slacker
+maintainers:
+  - name: destifo
