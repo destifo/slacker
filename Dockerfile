@@ -16,7 +16,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Build Rust backend
-FROM rust:1.83-bookworm AS backend-builder
+FROM rust:1.85-bookworm AS backend-builder
 
 WORKDIR /app
 
