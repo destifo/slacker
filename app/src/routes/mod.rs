@@ -4,7 +4,7 @@ pub mod workspaces;
 
 use std::sync::Arc;
 
-use axum::{middleware, Router};
+use axum::{http::StatusCode, middleware, routing::get, Router};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{
@@ -13,8 +13,14 @@ use crate::{
     routes::{auth::auth_routes, tasks::task_routes, workspaces::workspace_routes},
 };
 
+async fn health_check() -> StatusCode {
+    StatusCode::OK
+}
+
 pub fn create_routers(state: Arc<AppState>) -> Router<()> {
-    let public_routes = Router::new().nest("/auth", auth_routes());
+    let public_routes = Router::new()
+        .nest("/auth", auth_routes())
+        .route("/health", get(health_check));
 
     let protected_routes = Router::new()
         .nest("/tasks", task_routes())
