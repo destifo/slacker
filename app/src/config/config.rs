@@ -18,6 +18,10 @@ pub struct Config {
     pub google_client_secret: String,
     pub google_redirect_uri: String,
 
+    /// Frontend URL for OAuth callback redirects
+    #[serde(default = "default_frontend_url")]
+    pub frontend_url: String,
+
     pub jwt_secret: String,
     #[serde(default = "default_jwt_expiry")]
     pub jwt_expiry_hours: i64,
@@ -43,6 +47,10 @@ fn default_min_connections() -> u32 {
 
 fn default_jwt_expiry() -> i64 {
     168
+}
+
+fn default_frontend_url() -> String {
+    "http://localhost:5173".to_string()
 }
 
 fn default_encryption_key() -> String {

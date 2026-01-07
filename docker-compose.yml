@@ -14,7 +14,8 @@ services:
       - SERVER_IP=0.0.0.0
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:3000/api/auth/callback}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:3000/api/auth/google/callback}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
       - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-change-in-production}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your-encryption-key-change-in-production}
     volumes:

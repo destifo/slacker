@@ -31,8 +31,8 @@ COPY Cargo.lock Cargo.toml ./
 COPY app/ ./app/
 COPY migration/ ./migration/
 
-# Build release binary
-RUN cargo build --release --package slacker
+# Build release binaries (app + migration)
+RUN cargo build --release --package slacker --package migration
 
 # Runtime image
 FROM debian:bookworm-slim AS runtime
@@ -45,8 +45,9 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the binary
+# Copy the binaries
 COPY --from=backend-builder /app/target/release/slacker /app/slacker
+COPY --from=backend-builder /app/target/release/migration /app/migration
 
 # Copy frontend build
 COPY --from=frontend-builder /app/frontend/dist /app/static

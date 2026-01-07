@@ -202,14 +202,15 @@ pub async fn google_callback(
     })?;
 
     // Redirect to frontend with auth data
-    let frontend_url = format!(
-        "http://localhost:5173/auth/callback?token={}&name={}&email={}",
+    let redirect_url = format!(
+        "{}/auth/callback?token={}&name={}&email={}",
+        state.config.frontend_url.trim_end_matches('/'),
         urlencoding::encode(&token),
         urlencoding::encode(&person.name),
         urlencoding::encode(&person.email)
     );
 
-    Ok(Redirect::temporary(&frontend_url))
+    Ok(Redirect::temporary(&redirect_url))
 }
 
 pub async fn get_me(person: Person) -> Result<Json<Person>, StatusCode> {

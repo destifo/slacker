@@ -94,17 +94,29 @@ config:
   serverIp: "0.0.0.0"
   port: 3000
 
+  # Rust logging level (e.g., debug, info, warn, error, or slacker=debug,tower_http=debug)
+  rustLog: "info"
+
   # Google OAuth (required)
   googleClientId: ""
   googleClientSecret: ""
   googleRedirectUri: ""
 
+  # Frontend URL for OAuth callback redirects
+  # Set to your production URL (e.g., https://slacker.destifo.dev)
+  frontendUrl: ""
+
   # JWT settings
   jwtSecret: ""
-  jwtExpiryHours: 168  # 7 days
+  jwtExpiryHours: 168 # 7 days
 
   # Encryption key for tokens (base64 encoded 32-byte key)
   encryptionKey: ""
+
+# Extra environment variables (for any additional config)
+extraEnv: []
+  # - name: MY_VAR
+  #   value: "my-value"
 
 # Database configuration
 database:
@@ -119,7 +131,7 @@ database:
     enabled: true
     auth:
       username: slacker
-      password: ""  # Set via --set or secrets
+      password: "" # Set via --set or secrets
       database: slacker
     primary:
       persistence:

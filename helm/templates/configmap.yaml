@@ -1,11 +1,12 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "slacker.fullname" . }}
-  labels:
-    {{- include "slacker.labels" . | nindent 4 }}
+  name: { { include "slacker.fullname" . } }
+  labels: { { - include "slacker.labels" . | nindent 4 } }
 data:
-  SERVER_IP: {{ .Values.config.serverIp | quote }}
-  PORT: {{ .Values.config.port | quote }}
-  JWT_EXPIRY_HOURS: {{ .Values.config.jwtExpiryHours | quote }}
-  GOOGLE_REDIRECT_URI: {{ .Values.config.googleRedirectUri | quote }}
+  SERVER_IP: { { .Values.config.serverIp | quote } }
+  PORT: { { .Values.config.port | quote } }
+  RUST_LOG: { { .Values.config.rustLog | quote } }
+  JWT_EXPIRY_HOURS: { { .Values.config.jwtExpiryHours | quote } }
+  GOOGLE_REDIRECT_URI: { { .Values.config.googleRedirectUri | quote } }
+  FRONTEND_URL: { { .Values.config.frontendUrl | quote } }
