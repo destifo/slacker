@@ -7,8 +7,8 @@ use crate::{
     utils::crypto::generate_uuid,
 };
 use sea_orm::{
-    prelude::DateTime, ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, DbErr,
-    EntityTrait, QueryFilter,
+    prelude::DateTime, ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
+    DatabaseConnection, DbErr, EntityTrait, QueryFilter,
 };
 
 pub struct TasksRepo {
@@ -24,6 +24,7 @@ impl TasksRepo {
         &self,
         status: TaskStatus,
         assigned_to: Person,
+        assigned_by: Option<Person>,
         created_at: DateTime,
         message: Message,
     ) -> Result<Task, DbErr> {
@@ -31,6 +32,7 @@ impl TasksRepo {
             id: Set(generate_uuid()),
             status: Set(status),
             assigned_to: Set(assigned_to.id.clone()),
+            assigned_by: Set(assigned_by.map(|p| p.id)),
             created_at: Set(created_at),
             message_id: Set(message.id.clone()),
         };
@@ -91,6 +93,28 @@ impl TasksRepo {
     pub async fn get_tasks_by_person_id(&self, person_id: String) -> Result<Vec<Task>, DbErr> {
         let tasks = TaskEntity::find()
             .filter(task::Column::AssignedTo.eq(person_id))
+            .all(&self.db)
+            .await?;
+
+        Ok(tasks)
+    }
+
+    pub async fn get_initiated_by(&self, person_id: String) -> Result<Vec<Task>, DbErr> {
+        let tasks = TaskEntity::find()
+            .filter(task::Column::AssignedBy.eq(person_id))
+            .all(&self.db)
+            .await?;
+
+        Ok(tasks)
+    }
+
+    /// Get tasks assigned to a person but initiated by someone else
+    /// (excludes self-reactions and tasks with unknown initiator)
+    pub async fn get_assigned_by_others(&self, person_id: String) -> Result<Vec<Task>, DbErr> {
+        let tasks = TaskEntity::find()
+            .filter(task::Column::AssignedTo.eq(&person_id))
+            .filter(task::Column::AssignedBy.is_not_null())
+            .filter(task::Column::AssignedBy.ne(&person_id))
             .all(&self.db)
             .await?;
 

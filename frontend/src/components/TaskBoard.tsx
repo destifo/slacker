@@ -1,11 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Clock, AlertCircle, CheckCircle2, Loader2, Zap, Slack, Plus, Sparkles, RefreshCw } from 'lucide-react';
+import { Clock, AlertCircle, CheckCircle2, Loader2, Zap, Slack, Plus, Sparkles, RefreshCw, Users, User } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { TaskModal } from './TaskModal';
+import { NoAccessPage } from './NoAccessPage';
 import { useAuth } from '../hooks/useAuth';
+
+interface PermissionCheck {
+  can_configure_workspaces: boolean;
+  is_super_admin: boolean;
+  has_workspace_access: boolean;
+}
 
 interface Message {
   id: string;
@@ -41,12 +48,16 @@ export function TaskBoard() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<WorkspaceStatus | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const { activeEmail } = useAuth();
+  const [showInitiated, setShowInitiated] = useState(false);
+  const [permissions, setPermissions] = useState<PermissionCheck | null>(null);
+  const { activeEmail, person } = useAuth();
 
   const fetchTasks = useCallback(async (showRefreshIndicator = false) => {
     if (showRefreshIndicator) setIsRefreshing(true);
     try {
-      const response = await axios.get<TaskBoard>('/api/tasks/board');
+      const response = await axios.get<TaskBoard>('/api/tasks/board', {
+        params: { initiated: showInitiated || undefined }
+      });
       setBoard(response.data);
       setError(null);
     } catch (err) {
@@ -56,13 +67,34 @@ export function TaskBoard() {
       setLoading(false);
       setIsRefreshing(false);
     }
+  }, [showInitiated]);
+
+  const checkPermissions = useCallback(async () => {
+    try {
+      const response = await axios.get<PermissionCheck>('/api/admins/permissions');
+      setPermissions(response.data);
+      return response.data;
+    } catch (err) {
+      console.error('Failed to check permissions:', err);
+      return null;
+    }
   }, []);
 
   const checkWorkspaces = useCallback(async () => {
     try {
-      const response = await axios.get<{ workspaces: { is_active: boolean; is_syncing: boolean; sync_progress: string | null }[] }>('/api/workspaces');
+      // First check permissions
+      const perms = await checkPermissions();
+
+      const response = await axios.get<{ workspaces: { is_active: boolean; is_syncing: boolean; sync_progress: string | null; is_linked: boolean }[] }>('/api/workspaces');
       const workspaces = response.data.workspaces;
-      setHasWorkspaces(workspaces && workspaces.length > 0);
+
+      // Check if user has any linked workspaces
+      const linkedWorkspaces = workspaces?.filter(w => w.is_linked) || [];
+      const hasLinkedWorkspaces = linkedWorkspaces.length > 0;
+
+      // User has access if they have linked workspaces OR can configure workspaces
+      const hasAccess = hasLinkedWorkspaces || (perms?.can_configure_workspaces ?? false);
+      setHasWorkspaces(hasAccess ? (workspaces && workspaces.length > 0) : false);
 
       // Check if active workspace is syncing
       const activeWs = workspaces?.find((w) => w.is_active);
@@ -73,7 +105,7 @@ export function TaskBoard() {
         });
       }
 
-      if (!workspaces || workspaces.length === 0) {
+      if (!hasAccess || !workspaces || workspaces.length === 0) {
         setLoading(false);
       }
     } catch (err) {
@@ -81,7 +113,7 @@ export function TaskBoard() {
       setHasWorkspaces(false);
       setLoading(false);
     }
-  }, []);
+  }, [checkPermissions]);
 
   // Initial load
   useEffect(() => {
@@ -137,12 +169,12 @@ export function TaskBoard() {
     };
   }, [syncStatus?.is_syncing, checkWorkspaces, fetchTasks]);
 
-  // Refetch when account switches or workspace changes
+  // Refetch when account switches, workspace changes, or view mode changes
   useEffect(() => {
     if (activeEmail) {
       fetchTasks();
     }
-  }, [activeEmail, activeWorkspace, fetchTasks]);
+  }, [activeEmail, activeWorkspace, showInitiated, fetchTasks]);
 
   const handleRefresh = useCallback(() => {
     fetchTasks(true);
@@ -174,7 +206,12 @@ export function TaskBoard() {
     );
   }
 
-  // Show welcome screen when no workspaces are configured
+  // Show no access page if user has no workspace access and cannot configure
+  if (hasWorkspaces === false && permissions && !permissions.can_configure_workspaces && !permissions.has_workspace_access) {
+    return <NoAccessPage email={person?.email || ''} />;
+  }
+
+  // Show welcome screen when no workspaces are configured (for admins)
   if (hasWorkspaces === false) {
     return (
       <div style={styles.welcomeContainer}>
@@ -238,34 +275,59 @@ export function TaskBoard() {
   return (
     <div style={styles.container}>
       <header style={styles.header}>
-        <div style={styles.headerContent}>
-          <div style={styles.workspaceTitle}>
-            {activeWorkspace ? (
-              <>
-                <span style={styles.workspaceLabel}>Workspace:</span>{' '}
-                <span style={styles.workspaceName}>{activeWorkspace}</span>
-              </>
-            ) : (
-              <span style={styles.workspaceLabel}>Select a workspace</span>
-            )}
+        <div style={styles.headerRow}>
+          <div style={styles.headerContent}>
+            <div style={styles.workspaceTitle}>
+              {activeWorkspace ? (
+                <>
+                  <span style={styles.workspaceName}>{activeWorkspace}</span>
+                </>
+              ) : (
+                <span style={styles.workspaceLabel}>Select a workspace</span>
+              )}
+            </div>
+            <div style={styles.tasksInfo}>
+              <span style={styles.tasksLabel}>{showInitiated ? 'Initiated' : 'Assigned'}</span>
+              <div style={styles.badge}>{totalTasks}</div>
+            </div>
           </div>
-          <div style={styles.tasksInfo}>
-            <span style={styles.tasksLabel}>Tasks</span>
-            <div style={styles.badge}>{totalTasks}</div>
+          <div style={styles.headerActions}>
+            <div className="view-toggle" style={styles.viewToggle}>
+              <button
+                onClick={() => setShowInitiated(false)}
+                style={{
+                  ...styles.toggleButton,
+                  ...(showInitiated ? {} : styles.toggleButtonActive),
+                }}
+                title="Tasks assigned to me"
+              >
+                <User size={16} />
+                <span className="toggle-label">My Tasks</span>
+              </button>
+              <button
+                onClick={() => setShowInitiated(true)}
+                style={{
+                  ...styles.toggleButton,
+                  ...(showInitiated ? styles.toggleButtonActive : {}),
+                }}
+                title="Tasks I initiated"
+              >
+                <Users size={16} />
+                <span className="toggle-label">Initiated</span>
+              </button>
+            </div>
+            <WorkspaceSwitcher onWorkspaceChange={handleWorkspaceChange} />
+            <button
+              onClick={() => handleRefresh()}
+              disabled={isRefreshing}
+              style={styles.refreshButton}
+              title="Refresh tasks"
+            >
+              <RefreshCw size={18} style={isRefreshing ? styles.spinning : undefined} />
+            </button>
+            <ThemeToggle />
+            <UserMenu />
           </div>
-        </div>
-        <div style={styles.headerActions}>
-          <WorkspaceSwitcher onWorkspaceChange={handleWorkspaceChange} />
-          <button
-            onClick={() => handleRefresh()}
-            disabled={isRefreshing}
-            style={styles.refreshButton}
-            title="Refresh tasks"
-          >
-            <RefreshCw size={18} style={isRefreshing ? styles.spinning : undefined} />
-          </button>
-          <ThemeToggle />
-          <UserMenu />
         </div>
       </header>
 
@@ -420,14 +482,17 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
   },
   header: {
-    padding: '2rem 2rem 1.5rem',
+    padding: '1rem',
     borderBottom: '1px solid var(--border-color)',
     background: 'linear-gradient(180deg, var(--column-bg) 0%, transparent 100%)',
     flexShrink: 0,
+  },
+  headerRow: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: '2rem',
+    alignItems: 'center',
+    gap: '1rem',
+    flexWrap: 'wrap',
   },
   syncingBanner: {
     display: 'flex',
@@ -451,34 +516,70 @@ const styles: Record<string, React.CSSProperties> = {
   headerContent: {
     flex: 1,
     textAlign: 'left',
+    minWidth: 0,
   },
   headerActions: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.75rem',
+    gap: '0.5rem',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+  },
+  viewToggle: {
+    display: 'flex',
+    alignItems: 'center',
+    background: 'var(--button-bg)',
+    border: '1px solid var(--card-border)',
+    borderRadius: '10px',
+    padding: '4px',
+    gap: '2px',
+  },
+  toggleButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.375rem',
+    padding: '0.5rem 0.75rem',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    color: 'var(--text-tertiary)',
+    fontSize: '0.8125rem',
+    fontWeight: '500',
+    transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
+  } as React.CSSProperties,
+  toggleButtonActive: {
+    background: 'var(--gradient-blue)',
+    color: '#ffffff',
+    boxShadow: '0 2px 8px var(--glow-blue)',
   },
   refreshButton: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '40px',
-    height: '40px',
+    width: '36px',
+    height: '36px',
     background: 'var(--button-bg)',
     border: '1px solid var(--card-border)',
     borderRadius: '10px',
     cursor: 'pointer',
     color: 'var(--text-secondary)',
     transition: 'all 0.2s',
+    flexShrink: 0,
   },
   spinning: {
     animation: 'spin 1s linear infinite',
   },
   workspaceTitle: {
-    fontSize: '2rem',
+    fontSize: '1.25rem',
     fontWeight: '700',
     color: 'var(--text-primary)',
-    marginBottom: '0.5rem',
+    marginBottom: '0.25rem',
     textAlign: 'left',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
   workspaceLabel: {
     color: 'var(--text-secondary)',
@@ -507,20 +608,21 @@ const styles: Record<string, React.CSSProperties> = {
   },
   boardContainer: {
     display: 'flex',
-    gap: '1.5rem',
-    padding: '1.5rem 2rem 2rem',
+    gap: '1rem',
+    padding: '1rem',
     maxWidth: '1400px',
     margin: '0 auto',
     width: '100%',
     flex: 1,
-    overflow: 'hidden',
+    overflow: 'auto',
+    flexWrap: 'wrap',
   },
   column: {
-    flex: 1,
+    flex: '1 1 300px',
     display: 'flex',
     flexDirection: 'column',
-    minWidth: '320px',
-    height: '100%',
+    minWidth: '280px',
+    maxHeight: '100%',
   },
   columnHeader: {
     padding: '1rem',
@@ -780,7 +882,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-// Add CSS animations
+// Add CSS animations and responsive styles
 const styleSheet = document.createElement('style');
 styleSheet.textContent = `
   @keyframes spin {
@@ -803,6 +905,17 @@ styleSheet.textContent = `
     }
   }
 
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
@@ -819,6 +932,26 @@ styleSheet.textContent = `
 
   ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.15);
+  }
+
+  /* Toggle label visibility on larger screens */
+  .toggle-label {
+    display: none;
+  }
+
+  @media (min-width: 768px) {
+    .toggle-label {
+      display: inline;
+    }
+  }
+
+  /* Mobile responsive adjustments */
+  @media (max-width: 640px) {
+    .view-toggle {
+      order: -1;
+      width: 100%;
+      justify-content: center;
+    }
   }
 `;
 document.head.appendChild(styleSheet);

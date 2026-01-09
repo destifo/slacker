@@ -10,11 +10,17 @@ use crate::{
     utils::response::{APIError, APIResponse},
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Extension,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::warn;
+
+#[derive(Debug, Deserialize)]
+pub struct TaskBoardQuery {
+    #[serde(default)]
+    pub initiated: Option<bool>,
+}
 
 #[derive(Serialize, Debug)]
 pub struct MessageSummary {
@@ -76,6 +82,7 @@ pub async fn get_my_tasks(
 pub async fn get_tasks_board(
     State(state): State<Arc<AppState>>,
     Extension(person): Extension<Person>,
+    Query(query): Query<TaskBoardQuery>,
 ) -> Result<APIResponse, APIError> {
     let tasks_repo = TasksRepo::new(state.database.clone());
     let messages_repo = MessagesRepo::new(state.database.clone());
@@ -97,16 +104,25 @@ pub async fn get_tasks_board(
         }
     };
 
-    // Get all tasks (we'll filter by workspace on person level)
-    let all_tasks = tasks_repo.get_all_tasks().await?;
+    // Get tasks based on query:
+    // - initiated=true: tasks user initiated (they wrote the message, someone else reacted)
+    // - initiated=false/missing: "My Tasks" = tasks user reacted to (they took ownership)
+    let user_tasks = if query.initiated.unwrap_or(false) {
+        // Tasks I initiated: I wrote the message, someone else reacted
+        tasks_repo.get_assigned_by_others(person.id.clone()).await?
+    } else {
+        // My Tasks: I reacted to them, so they're my responsibility
+        tasks_repo.get_initiated_by(person.id.clone()).await?
+    };
+
     let mut board = TaskBoard {
         in_progress: vec![],
         blocked: vec![],
         completed: vec![],
     };
 
-    for task in all_tasks {
-        // Only include tasks where the assigned person is linked to the active workspace
+    for task in user_tasks {
+        // Only include tasks where the assignee is linked to the active workspace
         let person_workspace = workspace_links_repo
             .get_by_person_and_workspace(
                 task.assigned_to.clone(),

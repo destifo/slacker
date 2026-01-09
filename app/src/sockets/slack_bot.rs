@@ -304,8 +304,8 @@ impl SlackBot {
     }
 
     async fn handle_reaction_added(&self, event: SlackEvent) -> Result<()> {
-        let user = match &event.user {
-            Some(u) => u,
+        let reactor_slack_id = match &event.user {
+            Some(u) => u.clone(),
             None => return Ok(()),
         };
 
@@ -334,7 +334,7 @@ impl SlackBot {
 
         match self.fetch_message(&item.channel, &item.ts).await {
             Ok(message) => {
-                self.create_or_update_task(message, &item.channel, &item.ts)
+                self.create_or_update_task(message, &item.channel, &item.ts, &reactor_slack_id)
                     .await?;
             }
             Err(e) => error!("Failed to fetch message: {}", e),
@@ -379,14 +379,15 @@ impl SlackBot {
         slack_message: SlackMessage,
         channel: &str,
         message_timestamp: &str,
+        reactor_slack_id: &str,
     ) -> Result<()> {
         let persons_repo = PersonsRepo::new(self.db.clone());
         let messages_repo = MessagesRepo::new(self.db.clone());
         let tasks_repo = TasksRepo::new(self.db.clone());
         let workspace_links_repo = WorkspaceLinksRepo::new(self.db.clone());
 
-        // Get person by external_id (Slack member ID)
-        let person = match persons_repo
+        // Get assignee (person who wrote the message)
+        let assignee = match persons_repo
             .get_by_external_id(slack_message.user.clone())
             .await
         {
@@ -400,28 +401,34 @@ impl SlackBot {
             }
         };
 
-        // Check if person is linked to this workspace
+        // Get assigner (person who added the reaction) - optional
+        let assigner = persons_repo
+            .get_by_external_id(reactor_slack_id.to_string())
+            .await
+            .ok();
+
+        // Check if assignee is linked to this workspace
         match workspace_links_repo
-            .get_by_person_and_workspace(person.id.clone(), self.workspace_name.clone())
+            .get_by_person_and_workspace(assignee.id.clone(), self.workspace_name.clone())
             .await
         {
             Ok(link) if link.is_linked => {
                 info!(
                     "User {} is linked to workspace {} - processing task",
-                    person.email, self.workspace_name
+                    assignee.email, self.workspace_name
                 );
             }
             Ok(_) => {
                 info!(
                     "User {} is not linked to workspace {} - skipping task creation",
-                    person.email, self.workspace_name
+                    assignee.email, self.workspace_name
                 );
                 return Ok(());
             }
             Err(_) => {
                 info!(
                     "User {} has no link to workspace {} - skipping task creation",
-                    person.email, self.workspace_name
+                    assignee.email, self.workspace_name
                 );
                 return Ok(());
             }
@@ -445,7 +452,7 @@ impl SlackBot {
                         message_external_id.clone(),
                         channel.to_string(),
                         message_timestamp.to_string(),
-                        &person,
+                        &assignee,
                     )
                     .await?;
                 Some(created)
@@ -479,7 +486,13 @@ impl SlackBot {
             Err(DbErr::RecordNotFound(e)) => {
                 info!("Task not found, creating new task: {}", e);
                 tasks_repo
-                    .create(status, person, chrono::Utc::now().naive_utc(), message)
+                    .create(
+                        status,
+                        assignee,
+                        assigner,
+                        chrono::Utc::now().naive_utc(),
+                        message,
+                    )
                     .await?;
             }
             Err(e) => {
@@ -964,8 +977,20 @@ impl InitialSyncer {
         let status_set = map_reactions_to_status(&reactions, emoji_mappings);
         let status = eval_status_from_reactions(status_set);
 
+        // Try to get the first reactor as the assigner (if available)
+        let assigner = match reactions.iter().filter_map(|r| r.users.first()).next() {
+            Some(slack_id) => persons_repo.get_by_external_id(slack_id.clone()).await.ok(),
+            None => None,
+        };
+
         tasks_repo
-            .create(status, person, chrono::Utc::now().naive_utc(), message)
+            .create(
+                status,
+                person,
+                assigner,
+                chrono::Utc::now().naive_utc(),
+                message,
+            )
             .await?;
 
         Ok(())

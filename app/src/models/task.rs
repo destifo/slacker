@@ -21,6 +21,7 @@ pub struct Model {
     pub id: String,
     pub status: TaskStatus,
     pub assigned_to: String,
+    pub assigned_by: Option<String>,
     pub created_at: DateTime,
     pub message_id: String,
 }

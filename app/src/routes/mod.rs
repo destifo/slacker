@@ -1,3 +1,4 @@
+pub mod admins;
 pub mod auth;
 pub mod tasks;
 pub mod workspaces;
@@ -10,7 +11,9 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::{
     core::state::AppState,
     middlewares::auth::require_auth,
-    routes::{auth::auth_routes, tasks::task_routes, workspaces::workspace_routes},
+    routes::{
+        admins::admin_routes, auth::auth_routes, tasks::task_routes, workspaces::workspace_routes,
+    },
 };
 
 async fn health_check() -> StatusCode {
@@ -25,6 +28,7 @@ pub fn create_routers(state: Arc<AppState>) -> Router<()> {
     let protected_routes = Router::new()
         .nest("/tasks", task_routes())
         .nest("/workspaces", workspace_routes())
+        .nest("/admins", admin_routes())
         .nest("/auth", protected_auth_routes())
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 

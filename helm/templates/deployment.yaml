@@ -32,6 +32,27 @@ spec:
       serviceAccountName: {{ include "slacker.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.persistence.enabled }}
+      initContainers:
+        - name: init-workspaces
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              if [ ! -f /data/workspaces.yaml ]; then
+                echo "Initializing workspaces.yaml from secret..."
+                cp /secret/workspaces.yaml /data/workspaces.yaml
+                chmod 644 /data/workspaces.yaml
+              else
+                echo "workspaces.yaml already exists, skipping init"
+              fi
+          volumeMounts:
+            - name: workspaces-data
+              mountPath: /data
+            - name: workspaces-secret
+              mountPath: /secret
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
@@ -57,9 +78,16 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           volumeMounts:
-            - name: workspaces-config
+            {{- if .Values.persistence.enabled }}
+            - name: workspaces-data
               mountPath: /app/workspaces.yaml
               subPath: workspaces.yaml
+            {{- else }}
+            - name: workspaces-secret
+              mountPath: /app/workspaces.yaml
+              subPath: workspaces.yaml
+              readOnly: true
+            {{- end }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
@@ -67,7 +95,12 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
-        - name: workspaces-config
+        {{- if .Values.persistence.enabled }}
+        - name: workspaces-data
+          persistentVolumeClaim:
+            claimName: {{ include "slacker.fullname" . }}-workspaces
+        {{- end }}
+        - name: workspaces-secret
           secret:
             secretName: {{ include "slacker.fullname" . }}-workspaces
       {{- with .Values.nodeSelector }}

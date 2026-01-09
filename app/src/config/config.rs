@@ -30,6 +30,9 @@ pub struct Config {
     /// IMPORTANT: Keep this secret and don't lose it!
     #[serde(default = "default_encryption_key")]
     pub encryption_key: String,
+
+    /// Super admin email - this user can always configure workspaces and invite other admins
+    pub admin_email: String,
 }
 
 fn default_port() -> u16 {

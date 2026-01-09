@@ -11,6 +11,7 @@ use tracing::{error, info};
 use crate::{
     config::workspaces::{WorkspaceConfig, WorkspacesConfig},
     core::state::AppState,
+    handlers::admins::can_configure_workspaces,
     models::{
         person::Model as Person, workspace_link::Model as WorkspaceLink,
         workspace_settings::EmojiMappings,
@@ -291,13 +292,18 @@ pub struct SetupWorkspaceResponse {
     message: String,
 }
 
-/// Setup a new workspace - REQUIRES AUTHENTICATION
+/// Setup a new workspace - REQUIRES ADMIN PERMISSION
 /// Tokens are encrypted before being stored
 pub async fn setup_workspace(
     State(state): State<Arc<AppState>>,
-    person: Person, // Requires auth!
+    person: Person,
     Json(payload): Json<SetupWorkspaceRequest>,
 ) -> Result<Json<SetupWorkspaceResponse>, APIError> {
+    // Check if user has permission to configure workspaces
+    if !can_configure_workspaces(&state, &person.email).await {
+        return Err(APIError::Forbidden);
+    }
+
     info!(
         "User {} setting up workspace: {}",
         person.email, payload.workspace_name
@@ -420,13 +426,18 @@ pub struct UpdateTokenRequest {
     pub bot_token: Option<String>,
 }
 
-/// Update workspace tokens (app_token and/or bot_token)
+/// Update workspace tokens (app_token and/or bot_token) - REQUIRES ADMIN PERMISSION
 pub async fn update_workspace_tokens(
     State(state): State<Arc<AppState>>,
     person: Person,
     Path(workspace_name): Path<String>,
     Json(payload): Json<UpdateTokenRequest>,
 ) -> Result<Json<SetupWorkspaceResponse>, APIError> {
+    // Check if user has permission to configure workspaces
+    if !can_configure_workspaces(&state, &person.email).await {
+        return Err(APIError::Forbidden);
+    }
+
     info!(
         "User {} updating tokens for workspace: {}",
         person.email, workspace_name
@@ -493,13 +504,18 @@ pub struct UpdateEmojiMappingsRequest {
     pub emoji_mappings: EmojiMappings,
 }
 
-/// Update emoji to status mappings for a workspace
+/// Update emoji to status mappings for a workspace - REQUIRES ADMIN PERMISSION
 pub async fn update_emoji_mappings(
     State(state): State<Arc<AppState>>,
     person: Person,
     Path(workspace_name): Path<String>,
     Json(payload): Json<UpdateEmojiMappingsRequest>,
 ) -> Result<Json<WorkspaceSettingsResponse>, APIError> {
+    // Check if user has permission to configure workspaces
+    if !can_configure_workspaces(&state, &person.email).await {
+        return Err(APIError::Forbidden);
+    }
+
     info!(
         "User {} updating emoji mappings for workspace: {}",
         person.email, workspace_name
@@ -540,12 +556,17 @@ pub async fn update_emoji_mappings(
     }))
 }
 
-/// Reset emoji mappings to defaults
+/// Reset emoji mappings to defaults - REQUIRES ADMIN PERMISSION
 pub async fn reset_emoji_mappings(
     State(state): State<Arc<AppState>>,
     person: Person,
     Path(workspace_name): Path<String>,
 ) -> Result<Json<WorkspaceSettingsResponse>, APIError> {
+    // Check if user has permission to configure workspaces
+    if !can_configure_workspaces(&state, &person.email).await {
+        return Err(APIError::Forbidden);
+    }
+
     info!(
         "User {} resetting emoji mappings for workspace: {}",
         person.email, workspace_name
@@ -652,7 +673,7 @@ pub struct InviteUserResponse {
     pub user: Option<WorkspaceUserInfo>,
 }
 
-/// Invite a user to a workspace by email
+/// Invite a user to a workspace by email - REQUIRES ADMIN PERMISSION
 /// Validates that the user exists in the Slack workspace before adding
 pub async fn invite_user_to_workspace(
     State(state): State<Arc<AppState>>,
@@ -660,6 +681,11 @@ pub async fn invite_user_to_workspace(
     Path(workspace_name): Path<String>,
     Json(payload): Json<InviteUserRequest>,
 ) -> Result<Json<InviteUserResponse>, APIError> {
+    // Check if user has permission to configure workspaces
+    if !can_configure_workspaces(&state, &person.email).await {
+        return Err(APIError::Forbidden);
+    }
+
     info!(
         "User {} inviting {} to workspace {}",
         person.email, payload.email, workspace_name
@@ -783,13 +809,18 @@ pub struct RemoveUserRequest {
     pub user_id: String,
 }
 
-/// Remove a user from a workspace
+/// Remove a user from a workspace - REQUIRES ADMIN PERMISSION
 pub async fn remove_user_from_workspace(
     State(state): State<Arc<AppState>>,
     person: Person,
     Path(workspace_name): Path<String>,
     Json(payload): Json<RemoveUserRequest>,
 ) -> Result<Json<InviteUserResponse>, APIError> {
+    // Check if user has permission to configure workspaces
+    if !can_configure_workspaces(&state, &person.email).await {
+        return Err(APIError::Forbidden);
+    }
+
     info!(
         "User {} removing user {} from workspace {}",
         person.email, payload.user_id, workspace_name
