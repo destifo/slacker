@@ -1,4 +1,5 @@
 use sea_orm::DatabaseConnection;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use crate::config::config::Config;
@@ -21,12 +22,13 @@ impl AppState {
 
         tokio::spawn(async move {
             let bot = SlackBot::new(workspace_name.clone(), app_token, bot_token, db, bot_status);
+            let token = CancellationToken::new();
 
             info!(
                 "Dynamically starting SlackBot for workspace: {}",
                 workspace_name
             );
-            if let Err(e) = bot.start().await {
+            if let Err(e) = bot.start(token).await {
                 error!("SlackBot for workspace {} failed: {}", workspace_name, e);
             }
         });

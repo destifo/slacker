@@ -127,18 +127,22 @@ export function TaskBoard() {
     }
   }, [hasWorkspaces, fetchTasks]);
 
-  // Only poll when syncing is active (3 second interval) AND tab is visible
+  // Poll while tab is visible so reaction-driven updates appear without manual refresh.
+  // Use faster polling during initial sync and slower polling afterward.
   useEffect(() => {
-    if (!syncStatus?.is_syncing) return;
+    if (!activeEmail || hasWorkspaces !== true) return;
 
     let interval: ReturnType<typeof setInterval> | null = null;
+    const pollEveryMs = syncStatus?.is_syncing ? 3000 : 8000;
 
     const startPolling = () => {
       if (document.visibilityState === 'visible') {
         interval = setInterval(() => {
-          checkWorkspaces();
+          if (syncStatus?.is_syncing) {
+            checkWorkspaces();
+          }
           fetchTasks();
-        }, 3000);
+        }, pollEveryMs);
       }
     };
 
@@ -152,7 +156,9 @@ export function TaskBoard() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         // Immediate fetch when tab becomes visible
-        checkWorkspaces();
+        if (syncStatus?.is_syncing) {
+          checkWorkspaces();
+        }
         fetchTasks();
         startPolling();
       } else {
@@ -167,7 +173,7 @@ export function TaskBoard() {
       stopPolling();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [syncStatus?.is_syncing, checkWorkspaces, fetchTasks]);
+  }, [activeEmail, hasWorkspaces, syncStatus?.is_syncing, checkWorkspaces, fetchTasks]);
 
   // Refetch when account switches, workspace changes, or view mode changes
   useEffect(() => {

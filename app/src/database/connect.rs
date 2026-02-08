@@ -40,7 +40,7 @@ pub async fn connect_database(config: Config) -> Result<DatabaseConnection, Data
         .min_connections(min_connections)
         .connect_timeout(Duration::from_secs(5))
         .idle_timeout(Duration::from_secs(300))
-        .sqlx_logging(true);
+        .sqlx_logging(false);
 
     let db = Database::connect(opt)
         .await

@@ -7,12 +7,19 @@ use slacker::{
     core::server::create_server,
     sockets::slack_bot::SlackBot,
 };
+use tokio::signal;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
     dotenv().ok();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
 
     let config = Config::load_envs().expect("Failed to load envs");
 
@@ -26,6 +33,8 @@ async fn main() -> Result<()> {
     let server_ip: IpAddr = server_ip_str.parse().unwrap_or(IpAddr::from([0, 0, 0, 0]));
     let addr = SocketAddr::new(server_ip, port);
     let (server, db_conn, bot_status) = create_server(config.clone()).await?;
+
+    let shutdown_token = CancellationToken::new();
 
     // Load and decrypt workspaces, spawn a bot for each
     match WorkspacesConfig::load_and_decrypt("workspaces.yaml", &config.encryption_key) {
@@ -44,9 +53,10 @@ async fn main() -> Result<()> {
                     bot_status.clone(),
                 );
 
+                let token = shutdown_token.clone();
                 tokio::spawn(async move {
                     info!("Starting SlackBot for workspace: {}", workspace_name);
-                    if let Err(e) = bot.start().await {
+                    if let Err(e) = bot.start(token).await {
                         error!("SlackBot for workspace {} failed: {}", workspace_name, e);
                     }
                 });
@@ -61,8 +71,19 @@ async fn main() -> Result<()> {
     let server = axum_server::bind(addr).serve(server.into_make_service());
     info!("Server starting on {}", addr);
 
-    if let Err(e) = server.await {
-        error!("Server failed: {}", e);
+    // Run server until Ctrl+C, then signal bots to shut down gracefully
+    tokio::select! {
+        result = server => {
+            if let Err(e) = result {
+                error!("Server failed: {}", e);
+            }
+        }
+        _ = signal::ctrl_c() => {
+            info!("Received Ctrl+C, shutting down gracefully...");
+            shutdown_token.cancel();
+            // Give bots a moment to close their WebSocket connections
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
     }
 
     Ok(())

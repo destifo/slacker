@@ -51,9 +51,29 @@ struct SlackReaction {
 struct SlackEvent {
     #[serde(rename = "type")]
     event_type: String,
+    #[serde(default)]
+    subtype: Option<String>,
     user: Option<String>,
     reaction: Option<String>,
     item: Option<SlackEventItem>,
+    #[serde(default)]
+    channel: Option<String>,
+    #[serde(default)]
+    ts: Option<String>,
+    #[serde(default)]
+    message: Option<SlackEventMessage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SlackEventMessage {
+    #[serde(default)]
+    user: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    ts: Option<String>,
+    #[serde(default)]
+    reactions: Option<Vec<SlackReaction>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,6 +167,8 @@ struct ReactionsResponse {
     ok: bool,
     #[serde(default)]
     message: Option<MessageWithReactions>,
+    #[serde(default)]
+    error: Option<String>,
 }
 
 impl SlackBot {
@@ -167,7 +189,7 @@ impl SlackBot {
         }
     }
 
-    pub async fn start(&self) -> Result<()> {
+    pub async fn start(&self, shutdown_token: tokio_util::sync::CancellationToken) -> Result<()> {
         let response = self
             .http_client
             .post("https://slack.com/api/apps.connections.open")
@@ -180,13 +202,13 @@ impl SlackBot {
         let ws_url = response
             .url
             .ok_or(anyhow::anyhow!("Failed to get WebSocket URL"))?;
-        info!("Connecting to Slack: {}", ws_url);
+        info!("[WS] Connecting to Slack: {}", ws_url);
 
         let (ws_stream, _) = connect_async(&ws_url).await?;
         let (mut write, mut read) = ws_stream.split();
 
         info!(
-            "Connected to Slack Socket Mode for workspace: {}",
+            "[WS] Connected to Slack Socket Mode for workspace: {}",
             self.workspace_name
         );
 
@@ -212,61 +234,114 @@ impl SlackBot {
             syncer.perform_initial_sync_for_all_users().await;
         });
 
-        while let Some(msg) = read.next().await {
-            // Update heartbeat on any message
-            self.status_manager.heartbeat(&self.workspace_name).await;
+        // Start periodic sync as a safety net for cases where reaction events are not delivered.
+        let periodic_sync_bot = SlackBot::new(
+            self.workspace_name.clone(),
+            self.app_token.clone(),
+            self.bot_token.clone(),
+            self.db.clone(),
+            self.status_manager.clone(),
+        );
+        tokio::spawn(async move {
+            periodic_sync_bot.start_periodic_tasks_sync().await;
+        });
 
-            match msg {
-                Ok(Message::Text(text)) => {
-                    info!("Received text message: {}", text);
+        info!(
+            "[WS] Entering event loop for workspace: {}",
+            self.workspace_name
+        );
 
-                    match serde_json::from_str::<SlackEnvelope>(&text) {
-                        Ok(envelope) => {
-                            if let Some(envelope_id) = &envelope.envelope_id {
-                                let ack = serde_json::to_string(&Acknowledgment {
-                                    envelope_id: envelope_id.clone(),
-                                })?;
+        loop {
+            tokio::select! {
+                _ = shutdown_token.cancelled() => {
+                    info!("[WS] Shutdown signal received, closing WebSocket for {}", self.workspace_name);
+                    let _ = write.send(Message::Close(None)).await;
+                    break;
+                }
+                msg = read.next() => {
+                    let msg = match msg {
+                        Some(msg) => msg,
+                        None => {
+                            info!("[WS] WebSocket stream ended for {}", self.workspace_name);
+                            break;
+                        }
+                    };
 
-                                write.send(Message::Text(ack.into())).await?;
-                            }
+                    // Update heartbeat on any message
+                    self.status_manager.heartbeat(&self.workspace_name).await;
 
-                            if envelope.envelope_type == "events_api" {
-                                if let Some(payload) = envelope.payload {
-                                    if let Some(event) = payload.event {
-                                        self.handle_event(event).await;
+                    match msg {
+                        Ok(Message::Text(text)) => {
+                            let text_str = text.to_string();
+                            info!("[WS] Received text ({} bytes): {}", text_str.len(), &text_str[..text_str.len().min(300)]);
+
+                            match serde_json::from_str::<SlackEnvelope>(&text_str) {
+                                Ok(envelope) => {
+                                    info!("[WS] Envelope type: {}, has_id: {}, has_payload: {}",
+                                        envelope.envelope_type,
+                                        envelope.envelope_id.is_some(),
+                                        envelope.payload.is_some()
+                                    );
+
+                                    if let Some(envelope_id) = &envelope.envelope_id {
+                                        let ack = serde_json::to_string(&Acknowledgment {
+                                            envelope_id: envelope_id.clone(),
+                                        })?;
+                                        info!("[WS] Sending ACK for envelope: {}", envelope_id);
+                                        write.send(Message::Text(ack.into())).await?;
                                     }
+
+                                    if envelope.envelope_type == "events_api" {
+                                        if let Some(payload) = envelope.payload {
+                                            if let Some(event) = payload.event {
+                                                info!("[WS] Dispatching event: type={}", event.event_type);
+                                                self.handle_event(event).await;
+                                            } else {
+                                                warn!("[WS] events_api payload had no event");
+                                            }
+                                        } else {
+                                            warn!("[WS] events_api envelope had no payload");
+                                        }
+                                    } else {
+                                        info!("[WS] Non-event envelope type: {}", envelope.envelope_type);
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("[WS] Failed to parse SlackEnvelope: {}", e);
+                                    error!("[WS] Raw text was: {}", text_str);
                                 }
                             }
                         }
-                        Err(e) => {
-                            error!("Failed to parse SlackEnvelope: {}", e);
-                            error!("Raw text was: {}", text);
+                        Ok(Message::Ping(data)) => {
+                            write.send(Message::Pong(data)).await?;
                         }
+                        Ok(Message::Close(frame)) => {
+                            info!("[WS] WebSocket closed for workspace: {} frame: {:?}", self.workspace_name, frame);
+                            self.status_manager
+                                .set_disconnected(
+                                    &self.workspace_name,
+                                    Some("Connection closed".to_string()),
+                                )
+                                .await;
+                            break;
+                        }
+                        Err(e) => {
+                            error!("[WS] WebSocket error for {}: {}", self.workspace_name, e);
+                            self.status_manager
+                                .set_disconnected(&self.workspace_name, Some(e.to_string()))
+                                .await;
+                            break;
+                        }
+                        _ => {}
                     }
                 }
-                Ok(Message::Ping(data)) => {
-                    write.send(Message::Pong(data)).await?;
-                }
-                Ok(Message::Close(_)) => {
-                    info!("WebSocket closed for workspace: {}", self.workspace_name);
-                    self.status_manager
-                        .set_disconnected(
-                            &self.workspace_name,
-                            Some("Connection closed".to_string()),
-                        )
-                        .await;
-                    break;
-                }
-                Err(e) => {
-                    error!("WebSocket error for {}: {}", self.workspace_name, e);
-                    self.status_manager
-                        .set_disconnected(&self.workspace_name, Some(e.to_string()))
-                        .await;
-                    break;
-                }
-                _ => {}
             }
         }
+
+        info!(
+            "[WS] Event loop exited for workspace: {}",
+            self.workspace_name
+        );
 
         // Mark as disconnected when loop exits
         self.status_manager
@@ -277,6 +352,10 @@ impl SlackBot {
     }
 
     async fn handle_event(&self, event: SlackEvent) {
+        info!(
+            "Slack event received: type={} subtype={:?}",
+            event.event_type, event.subtype
+        );
         match event.event_type.as_str() {
             "reaction_added" => {
                 let res = self.handle_reaction_added(event).await;
@@ -288,6 +367,12 @@ impl SlackBot {
                 let res = self.handle_reaction_removed(event).await;
                 if res.is_err() {
                     error!("Failed to handle event: {:?}", res.err());
+                }
+            }
+            "message" => {
+                let res = self.handle_message_event(event).await;
+                if res.is_err() {
+                    error!("Failed to handle message event: {:?}", res.err());
                 }
             }
             _ => {}
@@ -338,6 +423,7 @@ impl SlackBot {
                     &item.channel,
                     &item.ts,
                     Some(&reactor_slack_id),
+                    Some(reaction),
                 )
                 .await?;
             }
@@ -366,10 +452,54 @@ impl SlackBot {
         match self.fetch_message(&item.channel, &item.ts).await {
             Ok(message) => {
                 // Recompute status after removal, but don't reassign ownership on a remove event.
-                self.create_or_update_task(message, &item.channel, &item.ts, None)
+                self.create_or_update_task(message, &item.channel, &item.ts, None, None)
                     .await?;
             }
             Err(e) => error!("Failed to fetch message: {}", e),
+        }
+
+        Ok(())
+    }
+
+    async fn handle_message_event(&self, event: SlackEvent) -> Result<()> {
+        // Some workspaces deliver reaction updates as message_changed events.
+        if event.subtype.as_deref() != Some("message_changed") {
+            return Ok(());
+        }
+
+        let channel = match event.channel {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+
+        let message = match event.message {
+            Some(m) => m,
+            None => return Ok(()),
+        };
+
+        let message_ts = match message.ts {
+            Some(ts) => ts,
+            None => return Ok(()),
+        };
+
+        // Best-effort owner inference from current reaction users.
+        let inferred_reactor = message
+            .reactions
+            .as_ref()
+            .and_then(|reactions| reactions.iter().find_map(|r| r.users.first().cloned()));
+
+        match self.fetch_message(&channel, &message_ts).await {
+            Ok(slack_message) => {
+                self.create_or_update_task(
+                    slack_message,
+                    &channel,
+                    &message_ts,
+                    inferred_reactor.as_deref(),
+                    None,
+                )
+                .await?;
+            }
+            Err(e) => error!("Failed to fetch message from message_changed event: {}", e),
         }
 
         Ok(())
@@ -412,6 +542,7 @@ impl SlackBot {
         channel: &str,
         message_timestamp: &str,
         reactor_slack_id: Option<&str>,
+        trigger_reaction: Option<&str>,
     ) -> Result<()> {
         let persons_repo = PersonsRepo::new(self.db.clone());
         let messages_repo = MessagesRepo::new(self.db.clone());
@@ -433,8 +564,8 @@ impl SlackBot {
             }
         };
 
-        // Get assigner (person who added the reaction) - optional
-        let assigner = match reactor_slack_id {
+        // Get assigner from event (person who added the reaction) - optional.
+        let assigner_from_event = match reactor_slack_id {
             Some(reactor_id) => persons_repo
                 .get_by_external_id(reactor_id.to_string())
                 .await
@@ -504,27 +635,65 @@ impl SlackBot {
         let message = message.unwrap();
         let task_message = tasks_repo.get_task_by_message_id(message.id.clone()).await;
 
-        let reactions = self
+        let (reactions, reactions_fetch_failed) = match self
             .fetch_message_reactions(channel, message_timestamp)
-            .await?;
+            .await
+        {
+            Ok(r) => (r, false),
+            Err(e) => {
+                warn!(
+                    "Failed to fetch reactions for {}:{} ({}). Falling back to event reaction.",
+                    channel, message_timestamp, e
+                );
+                (vec![], true)
+            }
+        };
 
         // Get emoji mappings for this workspace
         let emoji_mappings = self.get_emoji_mappings().await;
         let status_set = map_reactions_to_status(&reactions, &emoji_mappings);
-        let correct_status = eval_status_from_reactions(status_set);
-        let status = correct_status;
+        let mut status = eval_status_from_reactions(status_set);
+        if status == TaskStatus::Blank {
+            if let Some(reaction_name) = trigger_reaction {
+                if let Some(fallback_status) = emoji_to_status(reaction_name, &emoji_mappings) {
+                    status = fallback_status;
+                }
+            }
+        }
+
+        // Resolve current owner from the latest reaction list when event doesn't provide one
+        // (e.g. reaction_removed or message_changed fallback).
+        let assigner_from_reactions = match reactions.iter().find_map(|r| r.users.first()) {
+            Some(slack_id) => persons_repo.get_by_external_id(slack_id.clone()).await.ok(),
+            None => None,
+        };
+        let effective_assigner = assigner_from_event.or(assigner_from_reactions);
+        let effective_assigner_id = effective_assigner.as_ref().map(|p| p.id.clone());
 
         match task_message {
             Ok(task) => {
-                tasks_repo.change_status(task.id.clone(), status).await?;
+                info!(
+                    "[TASK] Existing task {} found, current status: {:?}, new status: {:?}",
+                    task.id, task.status, status
+                );
+                if !(reactions_fetch_failed && trigger_reaction.is_none()) {
+                    tasks_repo
+                        .change_status(task.id.clone(), status.clone())
+                        .await?;
+                    info!("[TASK] Updated task {} status to {:?}", task.id, status);
+                } else {
+                    info!("[TASK] Skipped status update (reactions fetch failed with no trigger)");
+                }
 
-                // Track the latest known reactor as owner for the "My Tasks" view.
-                if let Some(assigner_id) = assigner.as_ref().map(|p| p.id.clone()) {
-                    if task.assigned_by.as_ref() != Some(&assigner_id) {
-                        tasks_repo
-                            .change_assigned_by(task.id.clone(), Some(assigner_id))
-                            .await?;
-                    }
+                // Keep ownership aligned with current reaction state for tab filtering.
+                if task.assigned_by != effective_assigner_id {
+                    tasks_repo
+                        .change_assigned_by(task.id.clone(), effective_assigner_id.clone())
+                        .await?;
+                    info!(
+                        "[TASK] Updated task {} assigned_by to {:?}",
+                        task.id, effective_assigner_id
+                    );
                 }
             }
             Err(DbErr::RecordNotFound(e)) => {
@@ -537,7 +706,7 @@ impl SlackBot {
                     .create(
                         status,
                         assignee,
-                        assigner,
+                        effective_assigner,
                         chrono::Utc::now().naive_utc(),
                         message,
                     )
@@ -567,6 +736,15 @@ impl SlackBot {
             .json::<ReactionsResponse>()
             .await?;
 
+        if !response.ok {
+            return Err(anyhow::anyhow!(
+                "Slack reactions.get failed for {}:{} ({:?})",
+                channel,
+                timestamp,
+                response.error
+            ));
+        }
+
         Ok(response
             .message
             .and_then(|m| m.reactions)
@@ -582,13 +760,27 @@ impl SlackBot {
         let emoji_mappings = self.get_emoji_mappings().await;
 
         for message in all_messages {
-            let message_reactions = self
+            let message_reactions = match self
                 .fetch_message_reactions(&message.channel, &message.timestamp)
-                .await?;
+                .await
+            {
+                Ok(reactions) => reactions,
+                Err(e) => {
+                    warn!(
+                        "Periodic sync: failed to fetch reactions for {}:{} ({})",
+                        message.channel, message.timestamp, e
+                    );
+                    continue;
+                }
+            };
             let status_set = map_reactions_to_status(&message_reactions, &emoji_mappings);
             let correct_status = eval_status_from_reactions(status_set);
 
-            let mapped_task = tasks_repo.get_task_by_message_id(message.id).await?;
+            let mapped_task = match tasks_repo.get_task_by_message_id(message.id.clone()).await {
+                Ok(task) => task,
+                Err(DbErr::RecordNotFound(_)) => continue,
+                Err(e) => return Err(anyhow::anyhow!(e)),
+            };
 
             tasks_repo
                 .change_status(mapped_task.id.clone(), correct_status)
@@ -601,9 +793,20 @@ impl SlackBot {
 
     pub async fn start_periodic_tasks_sync(&self) {
         let mut interval = interval(Duration::from_secs(300));
+        // Skip the immediate tick; we already run initial sync at startup.
+        interval.tick().await;
 
         loop {
             interval.tick().await;
+
+            // Discover new reacted messages as a fallback when reaction events are not delivered.
+            let syncer = InitialSyncer::new(
+                self.workspace_name.clone(),
+                self.bot_token.clone(),
+                self.db.clone(),
+                self.status_manager.clone(),
+            );
+            syncer.perform_initial_sync_for_all_users().await;
 
             if let Err(e) = self.run_periodic_sync().await {
                 error!("Periodic task failed: {}", e);
@@ -989,24 +1192,30 @@ impl InitialSyncer {
         }
 
         let message_external_id = format!("slack:{}:{}", channel_id, ts);
-
-        if messages_repo
+        let message = match messages_repo
             .get_message_by_external_id(message_external_id.clone())
             .await
-            .is_ok()
         {
-            return Ok(());
-        }
-
-        let message = messages_repo
-            .create(
-                text,
-                message_external_id,
-                channel_id.to_string(),
-                ts.clone(),
-                &person,
-            )
-            .await?;
+            Ok(existing) => existing,
+            Err(DbErr::RecordNotFound(_)) => {
+                messages_repo
+                    .create(
+                        text,
+                        message_external_id,
+                        channel_id.to_string(),
+                        ts.clone(),
+                        &person,
+                    )
+                    .await?
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to load or create message {}: {}",
+                    message_external_id,
+                    e
+                ))
+            }
+        };
 
         let reactions: Vec<SlackReaction> = msg
             .reactions
@@ -1024,22 +1233,47 @@ impl InitialSyncer {
 
         let status_set = map_reactions_to_status(&reactions, emoji_mappings);
         let status = eval_status_from_reactions(status_set);
+        if status == TaskStatus::Blank {
+            return Ok(());
+        }
 
         // Try to get the first reactor as the assigner (if available)
         let assigner = match reactions.iter().filter_map(|r| r.users.first()).next() {
             Some(slack_id) => persons_repo.get_by_external_id(slack_id.clone()).await.ok(),
             None => None,
         };
+        let assigner_id = assigner.as_ref().map(|p| p.id.clone());
 
-        tasks_repo
-            .create(
-                status,
-                person,
-                assigner,
-                chrono::Utc::now().naive_utc(),
-                message,
-            )
-            .await?;
+        match tasks_repo.get_task_by_message_id(message.id.clone()).await {
+            Ok(task) => {
+                if task.status != status {
+                    tasks_repo.change_status(task.id.clone(), status).await?;
+                }
+                if task.assigned_by != assigner_id {
+                    tasks_repo
+                        .change_assigned_by(task.id.clone(), assigner_id)
+                        .await?;
+                }
+            }
+            Err(DbErr::RecordNotFound(_)) => {
+                tasks_repo
+                    .create(
+                        status,
+                        person,
+                        assigner,
+                        chrono::Utc::now().naive_utc(),
+                        message,
+                    )
+                    .await?;
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to load task for message {}: {}",
+                    message.id,
+                    e
+                ))
+            }
+        }
 
         Ok(())
     }
