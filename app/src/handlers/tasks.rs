@@ -109,10 +109,10 @@ pub async fn get_tasks_board(
     // - initiated=false/missing: "My Tasks" = tasks user reacted to (they took ownership)
     let user_tasks = if query.initiated.unwrap_or(false) {
         // Tasks I initiated: I wrote the message, someone else reacted
-        tasks_repo.get_initiated_by(person.id.clone()).await?
+        tasks_repo.get_assigned_by_others(person.id.clone()).await?
     } else {
         // My Tasks: I reacted to them, so they're my responsibility
-        tasks_repo.get_assigned_by_others(person.id.clone()).await?
+        tasks_repo.get_initiated_by(person.id.clone()).await?
     };
 
     let mut board = TaskBoard {

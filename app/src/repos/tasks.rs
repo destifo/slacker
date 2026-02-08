@@ -7,8 +7,8 @@ use crate::{
     utils::crypto::generate_uuid,
 };
 use sea_orm::{
-    prelude::DateTime, ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
-    DatabaseConnection, DbErr, EntityTrait, QueryFilter,
+    prelude::DateTime, ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, DbErr,
+    EntityTrait, QueryFilter,
 };
 
 pub struct TasksRepo {
@@ -67,6 +67,23 @@ impl TasksRepo {
 
         let mut task: ActiveModel = task.into();
         task.status = Set(status);
+        let updated_task = task.update(&self.db).await?;
+
+        Ok(updated_task)
+    }
+
+    pub async fn change_assigned_by(
+        &self,
+        task_id: String,
+        assigned_by: Option<String>,
+    ) -> Result<Task, DbErr> {
+        let task = TaskEntity::find_by_id(&task_id)
+            .one(&self.db)
+            .await?
+            .ok_or(DbErr::RecordNotFound("Task was not found.".to_string()))?;
+
+        let mut task: ActiveModel = task.into();
+        task.assigned_by = Set(assigned_by);
         let updated_task = task.update(&self.db).await?;
 
         Ok(updated_task)

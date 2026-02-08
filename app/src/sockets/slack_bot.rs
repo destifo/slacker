@@ -285,11 +285,10 @@ impl SlackBot {
                 }
             }
             "reaction_removed" => {
-                let res = self.handle_reaction_added(event).await;
+                let res = self.handle_reaction_removed(event).await;
                 if res.is_err() {
                     error!("Failed to handle event: {:?}", res.err());
                 }
-                info!("Reaction removed - could update task status");
             }
             _ => {}
         }
@@ -334,7 +333,40 @@ impl SlackBot {
 
         match self.fetch_message(&item.channel, &item.ts).await {
             Ok(message) => {
-                self.create_or_update_task(message, &item.channel, &item.ts, &reactor_slack_id)
+                self.create_or_update_task(
+                    message,
+                    &item.channel,
+                    &item.ts,
+                    Some(&reactor_slack_id),
+                )
+                .await?;
+            }
+            Err(e) => error!("Failed to fetch message: {}", e),
+        }
+
+        Ok(())
+    }
+
+    async fn handle_reaction_removed(&self, event: SlackEvent) -> Result<()> {
+        let reaction = match &event.reaction {
+            Some(r) => r,
+            None => return Ok(()),
+        };
+
+        let emoji_mappings = self.get_emoji_mappings().await;
+        if emoji_to_status(reaction, &emoji_mappings).is_none() {
+            return Ok(());
+        }
+
+        let item = match &event.item {
+            Some(i) => i,
+            None => return Ok(()),
+        };
+
+        match self.fetch_message(&item.channel, &item.ts).await {
+            Ok(message) => {
+                // Recompute status after removal, but don't reassign ownership on a remove event.
+                self.create_or_update_task(message, &item.channel, &item.ts, None)
                     .await?;
             }
             Err(e) => error!("Failed to fetch message: {}", e),
@@ -379,7 +411,7 @@ impl SlackBot {
         slack_message: SlackMessage,
         channel: &str,
         message_timestamp: &str,
-        reactor_slack_id: &str,
+        reactor_slack_id: Option<&str>,
     ) -> Result<()> {
         let persons_repo = PersonsRepo::new(self.db.clone());
         let messages_repo = MessagesRepo::new(self.db.clone());
@@ -402,10 +434,13 @@ impl SlackBot {
         };
 
         // Get assigner (person who added the reaction) - optional
-        let assigner = persons_repo
-            .get_by_external_id(reactor_slack_id.to_string())
-            .await
-            .ok();
+        let assigner = match reactor_slack_id {
+            Some(reactor_id) => persons_repo
+                .get_by_external_id(reactor_id.to_string())
+                .await
+                .ok(),
+            None => None,
+        };
 
         // Check if assignee is linked to this workspace
         match workspace_links_repo
@@ -482,9 +517,22 @@ impl SlackBot {
         match task_message {
             Ok(task) => {
                 tasks_repo.change_status(task.id.clone(), status).await?;
+
+                // Track the latest known reactor as owner for the "My Tasks" view.
+                if let Some(assigner_id) = assigner.as_ref().map(|p| p.id.clone()) {
+                    if task.assigned_by.as_ref() != Some(&assigner_id) {
+                        tasks_repo
+                            .change_assigned_by(task.id.clone(), Some(assigner_id))
+                            .await?;
+                    }
+                }
             }
             Err(DbErr::RecordNotFound(e)) => {
                 info!("Task not found, creating new task: {}", e);
+                if status == TaskStatus::Blank {
+                    // Don't create empty tasks when tracked reactions were removed.
+                    return Ok(());
+                }
                 tasks_repo
                     .create(
                         status,
