@@ -27,7 +27,9 @@ impl MigrationTrait for Migration {
         // For existing tasks, set assigned_by to be the same as assigned_to
         manager
             .get_connection()
-            .execute_unprepared("UPDATE tasks SET assigned_by = assigned_to WHERE assigned_by IS NULL")
+            .execute_unprepared(
+                "UPDATE tasks SET assigned_by = assigned_to WHERE assigned_by IS NULL",
+            )
             .await?;
 
         Ok(())

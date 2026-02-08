@@ -106,6 +106,10 @@ config:
   # Set to your production URL (e.g., https://slacker.destifo.dev)
   frontendUrl: ""
 
+  # Super admin email - this user can always configure workspaces and invite other admins
+  # Required: Set this to the email of the primary administrator
+  adminEmail: ""
+
   # JWT settings
   jwtSecret: ""
   jwtExpiryHours: 168 # 7 days
